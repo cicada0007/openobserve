@@ -172,7 +172,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           class="-mx-2.5 -mb-2.5 flex min-h-0 flex-1 overflow-hidden"
           data-test="home-full-thread"
         >
-          <HomeThreadContext />
+          <HomeThreadContext :asked-on-home="threadAskedOnHome" />
           <aside
             v-if="threadRail"
             :aria-label="t('assistant.history.title')"
@@ -316,6 +316,8 @@ import {
   onDeactivated,
   onMounted,
   onUnmounted,
+  shallowRef,
+  type PropType,
 } from "vue";
 import { useI18nTyped } from "@/types/i18n";
 import { useStore } from "vuex";
@@ -401,12 +403,15 @@ const HomeNoDataContext = defineComponent({
   },
 });
 
-// A thread at Full density on Home keeps the window it had in a panel or window over Home.
+// A thread at Full density on Home keeps the window it had in a panel or window over Home; one asked from the Ask box never had Home's.
 const HomeThreadContext = defineComponent({
   name: "HomeThreadContext",
-  setup() {
+  props: { askedOnHome: { type: Function as PropType<() => boolean>, required: true } },
+  setup(props) {
     const route = useRoute();
-    useHomeWindowProvider(useStore(), () => homePeriodOfRoute(route));
+    useHomeWindowProvider(useStore(), () =>
+      props.askedOnHome() ? null : homePeriodOfRoute(route),
+    );
     return () => null;
   },
 });
@@ -761,6 +766,18 @@ export default defineComponent({
     const threadHandoff = ref(false);
     watch(threadId, (id, was) => (threadHandoff.value = id !== null && was === null));
     onDeactivated(() => (threadHandoff.value = false));
+    const assistantStore =
+      shallowRef<Awaited<ReturnType<typeof loadAssistant>>["assistantStore"]>();
+    void assistantModule?.then(
+      (m) => (assistantStore.value = m.assistantStore),
+      () => undefined,
+    );
+    // Called at each page read, so the thread's window follows the chat on screen.
+    const threadAskedOnHome = () => {
+      const state = assistantStore.value?.state;
+      const sid = threadParam(route.query) || state?.shell.activeSid;
+      return !!sid && state?.sessions[sid]?.origin.entryKind === "home_launcher";
+    };
 
     // A thread link or Back to Home can land while Home is already mounted on another tab.
     if (assistantV2) {
@@ -1040,6 +1057,7 @@ export default defineComponent({
     return {
       assistantV2,
       threadId,
+      threadAskedOnHome,
       threadHandoff,
       threadRail,
       threadView,
