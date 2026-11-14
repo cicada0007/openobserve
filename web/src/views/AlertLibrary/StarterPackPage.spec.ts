@@ -15,7 +15,7 @@
 
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, ref, shallowRef } from "vue";
+import { computed, reactive, ref, shallowRef } from "vue";
 
 import { fakeFlow } from "@/components/starterPacks/starterPackTestFlow";
 import i18n from "@/locales";
@@ -68,7 +68,7 @@ vi.mock("@/composables/starterPacks/useTurnOnAlerts", () => ({
   useTurnOnAlerts: () => fake.turn,
 }));
 vi.mock("@/composables/starterPacks/useStarterPackMatcher", () => ({
-  useStarterPackMatcher: () => ({ clusters: ref(["eu"]), check: vi.fn() }),
+  useStarterPackMatcher: () => ({ clusters: ref(["eu"]), state: ref("matched"), check: vi.fn() }),
 }));
 vi.mock("@/composables/starterPacks/usePackHealth", async (importOriginal) => {
   const { ref: vueRef } = await import("vue");
@@ -174,6 +174,11 @@ describe("StarterPackPage", () => {
       setThreshold: vi.fn(),
       turnOff: vi.fn(),
       chosenRows: computed(() => []),
+      listedRows: computed(() =>
+        fake.turn.rows.value.filter(
+          ({ enabled, alert }: any) => !enabled || !alert.destinations?.length,
+        ),
+      ),
     };
   });
   afterEach(() => {
@@ -197,6 +202,14 @@ describe("StarterPackPage", () => {
         t("starterPacks.page.chipOff", { count: 2 }, 2),
       );
       expect(has(wrapper, "starter-pack-page-turn-on-btn")).toBe(true);
+    });
+
+    it("offers Turn on for alerts that are on with no destination", async () => {
+      fake.turn.rows.value = [row(true, { alert: { stream_name: "s", destinations: [] } })];
+      const wrapper = await render();
+      expect(text(wrapper, "starter-pack-page-turn-on-btn")).toBe(
+        t("starterPacks.turnOn.submit", { count: 1 }, 1),
+      );
     });
 
     it("says the alerts are off before saying the data stopped", async () => {
@@ -472,6 +485,37 @@ describe("StarterPackPage", () => {
     expect(fake.replace).toHaveBeenCalled();
   });
 
+  it("opens the Turn on drawer to route alerts that are on with no destination", async () => {
+    fake.query = { org_identifier: "org", turnOn: "1" };
+    fake.turn.rows.value = [row(true, { alert: { stream_name: "s", destinations: [] } })];
+    const wrapper = await render();
+    expect(turnOnDrawer(wrapper).props("open")).toBe(true);
+  });
+
+  it("opens the Turn on drawer for a link that arrived while the rows reloaded", async () => {
+    fake.query = reactive({ org_identifier: "org" }) as Record<string, string>;
+    fake.turn.rows.value = [];
+    const wrapper = await render();
+    let finish!: () => void;
+    fake.turn.load = vi.fn(
+      () =>
+        new Promise<void>((done) => {
+          finish = () => {
+            fake.turn.rows.value = [row(false)];
+            done();
+          };
+        }),
+    );
+    wrapper.findComponent({ name: "StarterPackDrawer" }).vm.$emit("installed");
+    await flushPromises();
+    fake.query.turnOn = "1";
+    await flushPromises();
+    expect(turnOnDrawer(wrapper).props("open")).toBe(false);
+    finish();
+    await flushPromises();
+    expect(turnOnDrawer(wrapper).props("open")).toBe(true);
+  });
+
   it("keeps the Turn on link when there is nothing to turn on", async () => {
     fake.query = { org_identifier: "org", turnOn: "1" };
     const wrapper = await render();
@@ -511,13 +555,12 @@ describe("StarterPackPage", () => {
     expect(drawer.props("folderName")).toBe("Team folder");
   });
 
-  it("re-reads the page when the popup closes after it installed the pack", async () => {
+  it("re-reads the page when the popup reports the pack installed", async () => {
     fake.flow = fakeFlow({ isAdmin: ref(true) });
     const wrapper = await render();
     await wrapper.get('[data-test="starter-pack-page-setup-btn"]').trigger("click");
     vi.mocked(fake.flow.load).mockClear();
-    fake.flow.installed.value = true;
-    wrapper.findComponent({ name: "StarterPackDrawer" }).vm.$emit("update:open", false);
+    wrapper.findComponent({ name: "StarterPackDrawer" }).vm.$emit("installed");
     await flushPromises();
     expect(fake.flow.load).toHaveBeenCalledTimes(1);
   });

@@ -114,6 +114,7 @@ const folderName = ref(pack.folder.name);
 
 const rows = computed(() => turn.rows.value);
 const offCount = computed(() => rows.value.filter(({ enabled }) => !enabled).length);
+const listedCount = computed(() => turn.listedRows.value.length);
 const onRows = computed(() => rows.value.filter(({ enabled }) => enabled));
 const perDay = computed(() => queriesPerDay(onRows.value.map(({ alert }) => alert)));
 // A repaired alert's query reads the new stream while its stream setting keeps the name it was created with.
@@ -272,12 +273,18 @@ const openTurnOn = (ids?: string[]) => {
 };
 // The Library card links here with ?turnOn=1 so one drawer host serves both pages.
 const consumeTurnOnLink = () => {
-  if (route.query.turnOn !== "1" || !installed.value || !canManage.value || !offCount.value) return;
+  if (
+    route.query.turnOn !== "1" ||
+    !installed.value ||
+    !canManage.value ||
+    !turn.listedRows.value.length
+  )
+    return;
   router.replace({ query: { ...route.query, turnOn: undefined } }).catch(() => {});
   openTurnOn();
 };
 
-const refresh = async () => {
+const reload = async () => {
   await flow.load();
   if (!flow.record.value) {
     if (flow.isAdmin.value) {
@@ -296,14 +303,20 @@ const refresh = async () => {
     matcher.check(),
   ]);
 };
-
-onMounted(async () => {
-  await refresh();
+// A Ready link can land while the rows reload, when it finds nothing to list yet.
+const refresh = async () => {
+  await reload();
   consumeTurnOnLink();
-});
+};
+
+onMounted(refresh);
+// The setup popup's Ready links add ?turnOn=1 to this same page, which does not remount it.
+watch(
+  () => route.query.turnOn,
+  () => consumeTurnOnLink(),
+);
 watch(setupOpen, (isOpen) => {
   if (isOpen) void flow.loadPreview();
-  else if (flow.installed.value) void refresh();
 });
 watch(turnOnOpen, (isOpen) => {
   if (!isOpen) preselect.value = undefined;
@@ -522,13 +535,13 @@ const muteContext = computed(() =>
           {{ t("starterPacks.landing.remove") }}
         </OButton>
         <OButton
-          v-if="offCount"
+          v-if="listedCount"
           variant="primary"
           size="sm-action"
           data-test="starter-pack-page-turn-on-btn"
           @click="openTurnOn()"
         >
-          {{ t("starterPacks.turnOn.submit", { count: offCount }, offCount) }}
+          {{ t("starterPacks.turnOn.submit", { count: listedCount }, listedCount) }}
         </OButton>
       </template>
     </template>
@@ -797,6 +810,8 @@ const muteContext = computed(() =>
       :flow="flow"
       :clusters="matcher.clusters.value"
       :folder-name="folderName === pack.folder.name ? undefined : folderName"
+      :match-state="matcher.state.value"
+      @installed="refresh"
     />
     <StarterPackUpdateDrawer v-if="packsEnabled" v-model:open="updateOpen" :updates="updates" />
     <StarterPackUndoDialog v-model:open="removeOpen" :flow="flow" mode="remove" @done="refresh" />
