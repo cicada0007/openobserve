@@ -4457,6 +4457,7 @@
   },
   "iam": {
     "sectionAccess": "Access",
+    "configLoadFailed": "This organization's configuration could not be loaded, so some sections may not reflect your real access. Retry to load it again.",
     "sectionPermissions": "Permissions",
     "sectionOrganization": "Organization",
     "usersDesc": "People with access to this organization",
@@ -4804,13 +4805,21 @@
       "show": "Show",
       "searchRoles": "Search Roles",
       "all": "All",
-      "selected": "Selected"
+      "selected": "Selected",
+      "noneSelectedTitle": "No roles selected",
+      "noneSelectedDescription": "None of the roles in this organization are selected here. Switch to All to select one.",
+      "showAll": "Show all roles",
+      "showAllDesc": "List every role in this organization"
     },
     "groupServiceAccounts": {
       "show": "Show",
       "searchServiceAccounts": "Search Service Accounts",
       "all": "All",
-      "selected": "Selected"
+      "selected": "Selected",
+      "noneSelectedTitle": "No service accounts selected",
+      "noneSelectedDescription": "None of the service accounts in this organization are selected here. Switch to All to select one.",
+      "showAll": "Show all service accounts",
+      "showAllDesc": "List every service account in this organization"
     },
     "groupUsers": {
       "all": "All",
@@ -4818,7 +4827,11 @@
       "organizations": "Organizations",
       "show": "Show",
       "searchUser": "Search User",
-      "selectOrganization": "Select Organization"
+      "selectOrganization": "Select Organization",
+      "noneSelectedTitle": "No users selected",
+      "noneSelectedDescription": "None of the users in this organization are selected here. Switch to All to select one.",
+      "showAll": "Show all users",
+      "showAllDesc": "List every user in this organization"
     },
     "addUpdateOrganization": {
       "updateFailed": "Organization Update failed.",
@@ -26614,6 +26627,8 @@
       "noResults": "No icons match your search",
       "groups": {
         "results": "Results",
+        "icons": "Icons",
+        "monoLogos": "Logos",
         "status": "Status",
         "services": "Services",
         "ai": "AI",
@@ -28928,6 +28943,7 @@
       "drawerAllocatable": "Allocatable",
       "drawerRequest": "Request",
       "drawerLimit": "Limit",
+      "drawerRequestEqualsLimit": "Request = Limit",
       "drawerReplicasDeployment": "{desired} desired, {updated} updated, {total} total, {available} available, {unavailable} unavailable",
       "drawerReplicasSet": "{desired} desired, {current} current, {ready} ready",
       "drawerReplicas": "Replicas",
