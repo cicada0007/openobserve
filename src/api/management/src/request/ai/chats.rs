@@ -2151,16 +2151,16 @@ fn confirmations_in(events: &[DurableEvent], newest: Option<&TurnRecord>) -> usi
     let asked: std::collections::HashSet<String> = events
         .iter()
         .filter(|e| (start..=end).contains(&e.seq))
-        .filter_map(|e| {
-            let call = openobserve_core::ai_chat::projection::delete_confirmation_call(
-                &e.event_type,
-                &e.data,
-            )?;
-            Some(if call.is_empty() {
-                format!("#{}", e.seq)
-            } else {
-                call
-            })
+        .flat_map(|e| {
+            openobserve_core::ai_chat::projection::delete_confirmation_calls(&e.event_type, &e.data)
+                .into_iter()
+                .map(|call| {
+                    if call.is_empty() {
+                        format!("#{}", e.seq)
+                    } else {
+                        call
+                    }
+                })
         })
         .collect();
     asked.len()
@@ -2186,7 +2186,8 @@ fn pending_approval_in(events: &[DurableEvent], newest: Option<&TurnRecord>) -> 
         .rev()
         .filter(|e| (start..=end).contains(&e.seq))
         .find_map(|e| {
-            openobserve_core::ai_chat::projection::delete_confirmation_call(&e.event_type, &e.data)
+            openobserve_core::ai_chat::projection::delete_confirmation_calls(&e.event_type, &e.data)
+                .pop()
         })
 }
 
@@ -3723,6 +3724,52 @@ mod tests {
         assert!(waiting_cards(&cards, "alice@acme.io", 1_000).is_empty());
         let marked = ChatSummary::from(chat_row()).with_markers(None, waiting.get("s1"));
         assert!(marked.pending_approval && marked.in_progress());
+    }
+
+    /// A recorded 2.x chat whose one tool call became a delete awaiting the user's confirmation.
+    fn v2_delete_chat() -> Vec<DurableEvent> {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../core/src/ai_chat/testdata/v2_user_text_and_tools.json"
+        );
+        let body: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let mut events: Vec<DurableEvent> = body["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| DurableEvent::from_sync_event(e).unwrap())
+            .collect();
+        let sentinel = serde_json::json!({"type": "delete_confirmation", "resource_type": "alert", "id": "a1"});
+        let tool = &mut events[2].data["message"]["content"][0];
+        assert_eq!(tool["type"], "tool");
+        tool["name"] = "o2_delete".into();
+        tool["state"]["content"] =
+            serde_json::json!([{"type": "text", "text": sentinel.to_string()}]);
+        events
+    }
+
+    /// 2.x re-records a whole message on every change, so each snapshot repeats its requests.
+    #[test]
+    fn a_2x_delete_request_is_pending_once_however_often_it_is_recorded() {
+        let mut events = v2_delete_chat();
+        let call = events[2].data["message"]["content"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let last = events.last().unwrap().seq;
+        let newest = turn_record(0, Some(last + 1), TURN_COMPLETED);
+        assert_eq!(confirmations_in(&events, Some(&newest)), 1);
+        assert_eq!(
+            pending_approval_in(&events, Some(&newest)).as_deref(),
+            Some(call.as_str())
+        );
+        let mut again = events[2].clone();
+        again.seq = last + 1;
+        events.push(again);
+        assert_eq!(confirmations_in(&events, Some(&newest)), 1);
+        assert!(!unanswered(confirmations_in(&events, Some(&newest)), 1));
+        let later = turn_record(last + 2, None, TURN_RUNNING);
+        assert_eq!(pending_approval_in(&events, Some(&later)), None);
     }
 
     #[test]

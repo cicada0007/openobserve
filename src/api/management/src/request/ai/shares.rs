@@ -51,7 +51,7 @@ use o2_enterprise::enterprise::ai::chat::{
 use openobserve_core::ai_chat::{
     ReadError,
     admission::{normalize_uuid, resolve_owner},
-    projection,
+    projection, record_v2,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -289,6 +289,10 @@ struct Folded {
     infos: HashMap<String, Value>,
     /// Per message: its parts' final snapshots in first-seen order.
     parts: HashMap<String, Vec<(String, Value)>>,
+    /// Messages a 1.x event recorded; a 2.x copy of one is ignored, as in history.
+    v1_ids: HashSet<String>,
+    /// The latest 2.x user message: 2.x assistant messages name no parent.
+    last_user: Option<String>,
 }
 
 impl Folded {
@@ -296,9 +300,48 @@ impl Folded {
         let mut folded = Self::default();
         let mut seen = HashSet::new();
         for event in events {
-            folded.apply(live_type(&event.event_type), &event.data, &mut seen);
+            match record_v2::record_message(event) {
+                Some(message) => folded.apply_v2(message, &mut seen),
+                None => folded.apply(
+                    record_v2::live_type(&event.event_type),
+                    &event.data,
+                    &mut seen,
+                ),
+            }
         }
         folded
+    }
+
+    fn apply_v2(&mut self, message: &serde_json::Map<String, Value>, seen: &mut HashSet<String>) {
+        let id = message
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if self.v1_ids.contains(id) {
+            return;
+        }
+        let parent = self
+            .infos
+            .get(id)
+            .and_then(|info| info["parentID"].as_str())
+            .or(self.last_user.as_deref());
+        let Some(legacy) = record_v2::LegacyMessage::of(message, parent) else {
+            return;
+        };
+        if legacy.info["role"] == "user" {
+            self.last_user = Some(legacy.id.clone());
+        }
+        if seen.insert(legacy.id.clone()) {
+            self.order.push(legacy.id.clone());
+        }
+        let parts = legacy.parts.into_iter().map(|part| {
+            (
+                part["id"].as_str().unwrap_or_default().to_string(),
+                part.into(),
+            )
+        });
+        self.parts.insert(legacy.id.clone(), parts.collect());
+        self.infos.insert(legacy.id, legacy.info.into());
     }
 
     fn apply(&mut self, event_type: &str, data: &Value, seen: &mut HashSet<String>) {
@@ -306,6 +349,7 @@ impl Folded {
             "message.updated" => {
                 let info = &data["info"];
                 if let Some(id) = info["id"].as_str().filter(|_| info["role"].is_string()) {
+                    self.v1_ids.insert(id.to_string());
                     if seen.insert(id.to_string()) {
                         self.order.push(id.to_string());
                     }
@@ -2102,14 +2146,6 @@ fn seed_messages(turns: &[Value]) -> Vec<Value> {
     messages
 }
 
-/// A durable event type without opencode's version suffix (`message.updated.1`).
-fn live_type(event_type: &str) -> &str {
-    match event_type.rsplit_once('.') {
-        Some((head, tail)) if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) => head,
-        _ => event_type,
-    }
-}
-
 /// Drops o2-ai's preamble from a prompt stored before it became a separate tagged part.
 fn strip_legacy_prefix(text: &str) -> &str {
     let mut text = text;
@@ -2798,6 +2834,57 @@ mod tests {
     }
 
     #[test]
+    fn transcripts_read_2x_records_after_1x_events() {
+        let v2 = |seq: i64, message: Value| {
+            event(seq, "message.updated.2", json!({ "message": message }))
+        };
+        let events = vec![
+            message(0, "msg_u1", "user", None),
+            part(
+                1,
+                "msg_u1",
+                json!({"id": "p1", "type": "text", "text": "why is p99 up?"}),
+            ),
+            message(2, "msg_a1", "assistant", Some("msg_u1")),
+            part(
+                3,
+                "msg_a1",
+                json!({"id": "p2", "type": "text", "text": "GC."}),
+            ),
+            v2(4, json!({"id": "msg_u1", "type": "user", "text": "dup"})),
+            v2(
+                5,
+                json!({"id": "msg_u2", "type": "user", "text": "[Context]\nx\n\nand now?", "metadata": {"o2_user_text": "and now?"}}),
+            ),
+            v2(
+                6,
+                json!({"id": "msg_a2", "type": "assistant", "content": [
+                    {"type": "reasoning", "text": "hm"},
+                    {"type": "text", "text": "Checking."},
+                    {"type": "tool", "id": "call_1", "name": "o2_SearchSQL", "state": {"status": "completed", "input": {}, "content": [{"type": "text", "text": "rows"}]}},
+                ]}),
+            ),
+            v2(
+                7,
+                json!({"id": "msg_i2", "type": "idle", "outcome": "succeeded"}),
+            ),
+            v2(
+                8,
+                json!({"id": "msg_a3", "type": "assistant", "content": [{"type": "text", "text": "Done."}]}),
+            ),
+        ];
+        assert_eq!(
+            transcript(&events),
+            vec![
+                json!({"role": "user", "content": "why is p99 up?"}),
+                json!({"role": "assistant", "content": "GC."}),
+                json!({"role": "user", "content": "and now?"}),
+                json!({"role": "assistant", "content": "Checking.\n[tool o2_SearchSQL]\nDone."}),
+            ]
+        );
+    }
+
+    #[test]
     fn legacy_prompts_lose_the_restored_seed_and_context_preamble() {
         assert_eq!(
             strip_legacy_prefix(
@@ -2807,8 +2894,11 @@ mod tests {
         );
         assert_eq!(strip_legacy_prefix("[Context]\na: b\n\nreal"), "real");
         assert_eq!(strip_legacy_prefix("plain question"), "plain question");
-        assert_eq!(live_type("message.part.updated.1"), "message.part.updated");
-        assert_eq!(live_type("session.updated"), "session.updated");
+        assert_eq!(
+            record_v2::live_type("message.part.updated.1"),
+            "message.part.updated"
+        );
+        assert_eq!(record_v2::live_type("session.updated"), "session.updated");
     }
 
     #[test]
