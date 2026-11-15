@@ -11880,6 +11880,7 @@
       },
       "unknown": {
         "action": "Retry",
+        "status": "The server returned HTTP {status}.",
         "title": "Something went wrong."
       },
       "unreachable": {
