@@ -42,6 +42,8 @@ use crate::{
 
 const DEFAULT_SIZE: i64 = 100;
 const MAX_SIZE: i64 = 500;
+// The search RPC carries the offset as i32, so a larger `from` wraps negative and fails as a 500.
+const MAX_FROM: i64 = i32::MAX as i64 - MAX_SIZE;
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SecurityAuditQuery {
@@ -202,8 +204,8 @@ fn page(query: &SecurityAuditQuery) -> Result<(i64, i64, i64, i64), &'static str
     });
     validate_history_range(start_time, end_time)?;
     let from = query.from.unwrap_or(0);
-    if from < 0 {
-        return Err("from must not be negative");
+    if !(0..=MAX_FROM).contains(&from) {
+        return Err("from must be between 0 and 2147483147");
     }
     let size = query.size.unwrap_or(DEFAULT_SIZE).clamp(1, MAX_SIZE);
     Ok((start_time, end_time, from, size))
@@ -233,6 +235,15 @@ mod tests {
             ..query(1, 2, None)
         };
         assert!(page(&negative).is_err());
+        let from = |from: i64| SecurityAuditQuery {
+            from: Some(from),
+            ..query(1, 2, None)
+        };
+        assert_eq!(MAX_FROM, 2_147_483_147, "the 400 message names this bound");
+        assert_eq!(page(&from(MAX_FROM)).unwrap().2, MAX_FROM);
+        assert!(page(&from(MAX_FROM + 1)).is_err());
+        assert!(page(&from(8_114_837_566)).is_err());
+        assert!(page(&from(i64::MAX)).is_err());
     }
 
     #[tokio::test]
