@@ -624,6 +624,7 @@ provide(
     narrow: width.narrow.value,
     tight: width.tight.value,
     wide: width.wide.value,
+    agentIconOnly: width.agentIconOnly.value,
   })),
 );
 provide(composerTimeOpenKey, timeOpen);
