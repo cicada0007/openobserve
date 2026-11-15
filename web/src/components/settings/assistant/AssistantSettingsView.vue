@@ -21,7 +21,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
     title-data-test="settings-assistant-page-title"
     data-assistant-surface
     tabs-below
-    scroll
+    bleed
   >
     <template #header-tabs>
       <OTabs :model-value="activeTab" align="left" data-test="settings-assistant-tabs">
@@ -46,43 +46,50 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         @click="refresh"
       />
     </template>
-    <div
-      class="flex max-w-240 flex-col gap-4 p-4 max-md:p-3"
+    <component
+      :is="listTab ? 'div' : ConstrainedPage"
+      v-bind="listTab ? LIST_BODY : FORM_BODY"
       :data-test="`settings-assistant-panel-${activeTab}`"
     >
       <div
-        v-if="adminHelper"
-        class="border-border-default rounded-surface flex flex-wrap items-center gap-3 border p-3"
-        data-test="settings-assistant-admin-only"
+        v-if="adminHelper || offInDeployment"
+        :class="['flex flex-col gap-4', listTab ? 'px-page-edge pt-3' : 'pb-4']"
       >
-        <p class="text-text-body min-w-0 flex-1 text-sm">
-          {{ t("assistant.settings.adminOnly") }}
+        <div
+          v-if="adminHelper"
+          class="border-border-default rounded-surface flex flex-wrap items-center gap-3 border p-3"
+          data-test="settings-assistant-admin-only"
+        >
+          <p class="text-text-body min-w-0 flex-1 text-sm">
+            {{ t("assistant.settings.adminOnly") }}
+          </p>
+          <AssistantAskAdminPopover kind="settings" :org="page.org.value">
+            <template #trigger>
+              <OButton
+                variant="outline"
+                size="sm-action"
+                class="max-md:min-h-11"
+                data-test="settings-assistant-ask-admin"
+                >{{ t("assistant.gate.noPermission.askAdmin") }}</OButton
+              >
+            </template>
+          </AssistantAskAdminPopover>
+        </div>
+        <p
+          v-if="offInDeployment"
+          class="text-text-secondary text-sm"
+          data-test="settings-assistant-off-in-deployment"
+        >
+          {{ t("assistant.settings.offInDeployment") }}
         </p>
-        <AssistantAskAdminPopover kind="settings" :org="page.org.value">
-          <template #trigger>
-            <OButton
-              variant="outline"
-              size="sm-action"
-              class="max-md:min-h-11"
-              data-test="settings-assistant-ask-admin"
-              >{{ t("assistant.gate.noPermission.askAdmin") }}</OButton
-            >
-          </template>
-        </AssistantAskAdminPopover>
       </div>
-      <p
-        v-if="!page.aiEnabled.value && activeTab !== 'status'"
-        class="text-text-secondary text-sm"
-        data-test="settings-assistant-off-in-deployment"
-      >
-        {{ t("assistant.settings.offInDeployment") }}
-      </p>
       <component
         :is="TAB_COMPONENTS[activeTab]"
         :key="`${page.org.value}:${activeTab}`"
         ref="panel"
+        :class="listTab ? 'min-h-0 flex-1' : ''"
       />
-    </div>
+    </component>
   </OPageLayout>
 </template>
 
@@ -97,15 +104,21 @@ export interface AssistantSettingsViewProps {
 }
 
 /** The tabs this build renders, in strip order; an unknown or unbuilt tab id lands on Status. */
-export const SETTINGS_TABS: { id: AssistantSettingsTab; labelKey: I18nKey; writes: boolean }[] = [
-  { id: "status", labelKey: "assistant.settings.tabs.status", writes: true },
-  { id: "access", labelKey: "assistant.settings.tabs.access", writes: true },
-  { id: "data", labelKey: "assistant.settings.tabs.data", writes: true },
-  { id: "history", labelKey: "assistant.settings.tabs.history", writes: false },
-  { id: "usage", labelKey: "assistant.settings.tabs.usage", writes: false },
-  { id: "toolsets", labelKey: "assistant.settings.tabs.toolsets", writes: false },
-  { id: "permissions", labelKey: "assistant.settings.tabs.permissions", writes: false },
-  { id: "activity", labelKey: "assistant.settings.tabs.activity", writes: false },
+export const SETTINGS_TABS: {
+  id: AssistantSettingsTab;
+  labelKey: I18nKey;
+  writes: boolean;
+  /** A table tab runs full width and height, like every Settings list; the rest sit in the form column. */
+  list: boolean;
+}[] = [
+  { id: "status", labelKey: "assistant.settings.tabs.status", writes: true, list: false },
+  { id: "access", labelKey: "assistant.settings.tabs.access", writes: true, list: false },
+  { id: "data", labelKey: "assistant.settings.tabs.data", writes: true, list: false },
+  { id: "history", labelKey: "assistant.settings.tabs.history", writes: false, list: false },
+  { id: "usage", labelKey: "assistant.settings.tabs.usage", writes: false, list: false },
+  { id: "toolsets", labelKey: "assistant.settings.tabs.toolsets", writes: false, list: true },
+  { id: "permissions", labelKey: "assistant.settings.tabs.permissions", writes: false, list: true },
+  { id: "activity", labelKey: "assistant.settings.tabs.activity", writes: false, list: true },
 ];
 </script>
 
@@ -115,6 +128,7 @@ import { useRouter } from "vue-router";
 
 import { provideAssistantSurface } from "@/components/ai-assistant/common/assistantSurface";
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
+import ConstrainedPage from "@/components/common/ConstrainedPage.vue";
 import AssistantAskAdminPopover from "@/components/ai-assistant/gate/AssistantAskAdminPopover.vue";
 import { useAssistantName } from "@/composables/assistant";
 import OButton from "@/lib/core/Button/OButton.vue";
@@ -138,6 +152,9 @@ import { useAssistantSettingsPage } from "./useAssistantSettingsPage";
 provideAssistantSurface();
 
 const TABS = SETTINGS_TABS;
+
+const FORM_BODY = { size: "lg", align: "left", padded: false, class: "px-page-edge py-3" } as const;
+const LIST_BODY = { class: "flex h-full min-h-0 flex-col" } as const;
 
 const TAB_COMPONENTS: Partial<Record<AssistantSettingsTab, Component>> = {
   status: StatusTab,
@@ -163,6 +180,8 @@ const refreshing = ref(false);
 const known = computed(() => TABS.find((entry) => entry.id === props.tab));
 const activeTab = computed<AssistantSettingsTab>(() => known.value?.id ?? "status");
 const adminHelper = computed(() => !page.isAdmin.value && (known.value?.writes ?? true));
+const offInDeployment = computed(() => !page.aiEnabled.value && activeTab.value !== "status");
+const listTab = computed(() => known.value?.list ?? false);
 
 watch(
   () => props.tab,
