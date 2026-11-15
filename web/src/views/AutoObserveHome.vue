@@ -15,7 +15,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 -->
 
 <template>
-  <div v-if="assistantV2" class="flex h-full flex-col" data-test="autoobserve-home">
+  <div class="flex h-full flex-col" data-test="autoobserve-home">
     <div class="flex shrink-0 flex-col gap-2 px-4 pt-3">
       <OText as="h1" variant="page-title" data-test="autoobserve-preview-header">{{
         t("autoobserve2.previewHeader")
@@ -32,11 +32,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <AutoObserve v-else-if="view === 'nerd'" />
       <AutoObserve2 v-else />
     </div>
-  </div>
-  <div v-else class="h-full" data-test="autoobserve-home">
-    <AutoObserveMock v-if="!live" />
-    <AutoObserve v-else-if="view === 'nerd'" />
-    <AutoObserve2 v-else />
     <BulkReviewDrawer />
   </div>
 </template>
@@ -48,7 +43,6 @@ import BulkReviewDrawer from "@/components/autoobserve/insight/bulk/BulkReviewDr
 import { ASK_AI_KEY, type InsightAskPayload } from "@/components/autoobserve/insight/insightCta";
 import { keepLiveMode, useLiveMode } from "@/components/autoobserve/v2/autoobserveRoute";
 import { useAutoObserveView } from "@/components/autoobserve/v2/useAutoObserveView";
-import { isAssistantV2 } from "@/composables/assistant/flags";
 import OBanner from "@/lib/feedback/Banner/OBanner.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import { useI18nTyped } from "@/types/i18n";
@@ -76,5 +70,4 @@ const live = useLiveMode();
 onBeforeRouteUpdate(keepLiveMode);
 
 const { t } = useI18nTyped();
-const assistantV2 = isAssistantV2();
 </script>

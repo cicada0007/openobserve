@@ -66,11 +66,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           data-test="service-health-badge"
           >{{ serviceHealth.text }}</OTag
         >
-        <AiEntryButton
-          v-if="assistantV2"
-          v-bind="serviceDoor"
-          :appearance="mdUp ? 'button' : 'toolbar-icon'"
-        />
+        <AiEntryButton v-bind="serviceDoor" :appearance="mdUp ? 'button' : 'toolbar-icon'" />
         <ODropdown side="bottom" align="start">
           <template #trigger>
             <OButton
@@ -764,7 +760,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 </template>
 
 <script lang="ts">
-import { isAssistantV2 } from "@/composables/assistant/flags";
 import { useLoadedOrg } from "@/utils/assistant/doorBinding";
 import { versionImageLabel, whereSentence } from "@/utils/serviceVersionsCopy";
 import OTabs from "@/lib/navigation/Tabs/OTabs.vue";
@@ -1182,13 +1177,10 @@ export default defineComponent({
     const { t } = useI18nTyped();
 
     // The selection card's door: the service with its inbound and outbound calls over the window.
-    const assistantV2 = isAssistantV2();
-    const loadedOrg = assistantV2
-      ? useLoadedOrg(
-          () => props.graphData,
-          () => store.state.selectedOrganization?.identifier ?? "",
-        )
-      : null;
+    const loadedOrg = useLoadedOrg(
+      () => props.graphData,
+      () => store.state.selectedOrganization?.identifier ?? "",
+    );
     const { mdUp } = useBreakpoint();
     const serviceDoor = computed(() => {
       const node = props.selectedNode ?? {};
@@ -1199,7 +1191,7 @@ export default defineComponent({
       return {
         verb: "explain" as const,
         entryKind: "object_verb" as const,
-        boundOrg: loadedOrg?.value,
+        boundOrg: loadedOrg.value,
         objectKind: "service_edge" as const,
         label: t("assistant.entry.explainService"),
         tooltip: t("assistant.entry.tooltip.explainService"),
@@ -1221,7 +1213,7 @@ export default defineComponent({
     // Each edge touching the selected node, so every dependency has its own named door.
     const dependencies = computed(() => {
       const id = props.selectedNode?.id;
-      if (!assistantV2 || id === undefined) return [];
+      if (id === undefined) return [];
       const nameOf = (nodeId: unknown) => {
         const node = props.graphData.nodes?.find((n: any) => n.id === nodeId);
         return String(node?.name || node?.label || nodeId || "");
@@ -1243,7 +1235,7 @@ export default defineComponent({
     const dependencyDoor = (dep: { name: string; source: string; target: string; edge: any }) => ({
       verb: "explain" as const,
       entryKind: "object_verb" as const,
-      boundOrg: loadedOrg?.value,
+      boundOrg: loadedOrg.value,
       objectKind: "service_edge" as const,
       label: t("assistant.entry.explainDependencyNamed", { name: dep.name }),
       tooltip: t("assistant.entry.tooltip.explainEdge"),
@@ -3113,7 +3105,6 @@ export default defineComponent({
     }
 
     return {
-      assistantV2,
       serviceDoor,
       mdUp,
       dependencies,

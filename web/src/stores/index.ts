@@ -131,8 +131,6 @@ const store = createStore({
     allApiLimitsByOrgId: {},
     allRoleLimitsByOrgIdByRole: {},
     modulesToDisplay: {},
-    isAiChatEnabled: false,
-    isAiChatExpanded: false,
     isWebinarBannerVisible: false,
     currentChatTimestamp: null as number | null,
     chatUpdated: false,
@@ -361,12 +359,6 @@ const store = createStore({
     setRegexPatternHandoff(state, payload: { prompt: string; testValue: string }) {
       state.organizationData.regexPatternPrompt = payload.prompt;
       state.organizationData.regexPatternTestValue = payload.testValue;
-    },
-    setIsAiChatEnabled(state, payload) {
-      state.isAiChatEnabled = payload;
-    },
-    setIsAiChatExpanded(state, payload) {
-      state.isAiChatExpanded = payload;
     },
     setIsWebinarBannerVisible(state, payload) {
       state.isWebinarBannerVisible = payload;
@@ -621,12 +613,6 @@ const store = createStore({
     },
     setModulesToDisplay(context, payload) {
       context.commit("setModulesToDisplay", payload);
-    },
-    setIsAiChatEnabled(context, payload) {
-      context.commit("setIsAiChatEnabled", payload);
-    },
-    setIsAiChatExpanded(context, payload) {
-      context.commit("setIsAiChatExpanded", payload);
     },
     setIsWebinarBannerVisible(context, payload) {
       context.commit("setIsWebinarBannerVisible", payload);
