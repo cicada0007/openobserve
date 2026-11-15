@@ -61,6 +61,9 @@ pub(crate) const SESSION_ARG: &str = "_o2_session";
 const NAVIGATION_TOOL: &str = "create_navigation";
 const FIRST_PARTY_MCP_PREFIX: &str = "o2_";
 const O2_DELETE_TOOL: &str = "o2_delete";
+/// How long a delete confirmation can be answered (ms); the web's `DELETE_TTL_MS` holds a live one
+/// as long.
+pub const DELETE_CONFIRMATION_TTL_MS: i64 = 10 * 60_000;
 const MCP_SERVER_PREFIXES: [&str; 1] = ["o2"];
 const SEARCH_SQL_MAX_HITS: usize = 10;
 const TEST_FUNCTION_MAX_INPUT_EVENTS: usize = 5;
@@ -580,7 +583,10 @@ impl StreamState {
                 .cloned()
                 .unwrap_or_else(|| Value::Object(Map::new()));
             let result = coerce_tool_output(tool_state.get("output"), metadata);
-            if let Some(confirmation) = delete_confirmation_frame(&result, tool_name, call_id) {
+            let expires_at = delete_confirmation_expiry(&result, tool_name, tool_state);
+            if let Some(confirmation) =
+                delete_confirmation_frame(&result, tool_name, call_id, expires_at)
+            {
                 self.last_tools_call_info = None;
                 frames.push(confirmation);
                 return;
@@ -1010,8 +1016,9 @@ pub fn keep_inline_images(turn: &mut Value) {
     }
 }
 
-/// The call id (maybe empty) of a delete the agent asked the user to confirm in this event.
-pub fn delete_confirmation_call(event_type: &str, data: &Value) -> Option<String> {
+/// The call id (maybe empty) of a delete the agent asked to confirm in this event, while it can
+/// still be answered at `now_ms`.
+pub fn delete_confirmation_call(event_type: &str, data: &Value, now_ms: i64) -> Option<String> {
     if live_type(event_type) != "message.part.updated" {
         return None;
     }
@@ -1027,7 +1034,12 @@ pub fn delete_confirmation_call(event_type: &str, data: &Value) -> Option<String
         .cloned()
         .unwrap_or_else(|| Value::Object(Map::new()));
     let result = coerce_tool_output(state.get("output"), metadata);
-    is_delete_confirmation(&result, tool).then(|| {
+    if !is_delete_confirmation(&result, tool) {
+        return None;
+    }
+    // A confirmation with no time to read keeps the 24 h turn window it had before expiries.
+    let expired = delete_confirmation_expiry(&result, tool, state).is_some_and(|at| at <= now_ms);
+    (!expired).then(|| {
         [part.get("callID"), part.get("id")]
             .into_iter()
             .flatten()
@@ -2294,11 +2306,33 @@ fn delete_sentinels<'a>(
     candidates
 }
 
+/// When (epoch ms) a delete confirmation stops being answerable: its own `expires_at`, else its
+/// tool end plus the TTL.
+fn delete_confirmation_expiry(
+    result: &Map<String, Value>,
+    tool_name: &str,
+    tool_state: &Map<String, Value>,
+) -> Option<i64> {
+    let sentinels = delete_sentinels(result, tool_name);
+    let own = sentinels
+        .first()
+        .and_then(|first| first.get("expires_at"))
+        .and_then(Value::as_i64);
+    own.or_else(|| {
+        let time = obj(tool_state.get("time"))?;
+        let at = ["end", "start"]
+            .into_iter()
+            .find_map(|key| time.get(key).and_then(Value::as_i64))?;
+        Some(at.saturating_add(DELETE_CONFIRMATION_TTL_MS))
+    })
+}
+
 /// The `confirmation_required` frame the live stream showed for a delete awaiting approval.
 fn delete_confirmation_frame(
     result: &Map<String, Value>,
     tool_name: &str,
     call_id: &str,
+    expires_at: Option<i64>,
 ) -> Option<Value> {
     let sentinels = delete_sentinels(result, tool_name);
     let first = sentinels.first()?;
@@ -2346,6 +2380,9 @@ fn delete_confirmation_frame(
     });
     if !call_id.is_empty() {
         frame["id"] = Value::String(call_id.to_string());
+    }
+    if let Some(at) = expires_at {
+        frame["expires_at"] = Value::from(at);
     }
     Some(frame)
 }
@@ -2912,21 +2949,59 @@ mod tests {
         };
         let updated = "message.part.updated.1";
         assert_eq!(
-            delete_confirmation_call(updated, &part("o2_delete", "completed")).as_deref(),
+            delete_confirmation_call(updated, &part("o2_delete", "completed"), 0).as_deref(),
             Some("call_9")
         );
         assert_eq!(
-            delete_confirmation_call(updated, &part("o2_delete", "running")),
+            delete_confirmation_call(updated, &part("o2_delete", "running"), 0),
             None
         );
         assert_eq!(
-            delete_confirmation_call(updated, &part("SearchSQL", "completed")),
+            delete_confirmation_call(updated, &part("SearchSQL", "completed"), 0),
             None
         );
         assert_eq!(
-            delete_confirmation_call("message.updated.1", &part("o2_delete", "completed")),
+            delete_confirmation_call("message.updated.1", &part("o2_delete", "completed"), 0),
             None
         );
+    }
+
+    #[test]
+    fn a_delete_confirmation_expires_a_ttl_after_its_tool_ended() {
+        let timed = |own: Option<i64>| {
+            let mut sentinel =
+                json!({"type": "delete_confirmation", "resource_type": "alert", "id": "a1"});
+            if let Some(at) = own {
+                sentinel["expires_at"] = at.into();
+            }
+            json!({"part": {"id": "prt_1", "callID": "call_9", "tool": "o2_delete",
+                "state": {"status": "completed", "output": sentinel.to_string(),
+                "time": {"start": 900, "end": 1_000}}}})
+        };
+        let updated = "message.part.updated.1";
+        let until = 1_000 + DELETE_CONFIRMATION_TTL_MS;
+        assert_eq!(
+            delete_confirmation_call(updated, &timed(None), until - 1).as_deref(),
+            Some("call_9")
+        );
+        assert_eq!(delete_confirmation_call(updated, &timed(None), until), None);
+        assert_eq!(
+            delete_confirmation_call(updated, &timed(Some(2_000)), 2_000),
+            None
+        );
+        assert_eq!(
+            delete_confirmation_call(updated, &timed(Some(2_000)), 1_999).as_deref(),
+            Some("call_9")
+        );
+        // The replayed request carries the expiry, so a reload shows it only while it can be
+        // answered.
+        let state = timed(None)["part"]["state"].as_object().unwrap().clone();
+        let result = coerce_tool_output(state.get("output"), json!({}));
+        let expires_at = delete_confirmation_expiry(&result, O2_DELETE_TOOL, &state);
+        assert_eq!(expires_at, Some(until));
+        let frame =
+            delete_confirmation_frame(&result, O2_DELETE_TOOL, "call_9", expires_at).unwrap();
+        assert_eq!(frame["expires_at"], until);
     }
 
     /// What the web client's rendered record and the server's frames must agree on.
@@ -3185,6 +3260,8 @@ mod tests {
         assert_eq!(asked.len(), 1, "{asked:?}");
         assert_eq!(asked[0]["tool"], O2_DELETE_TOOL);
         assert_eq!(asked[0]["args"]["items"][0]["id"], "a1");
+        // This recording's tool state has no time, so the legacy request carries no expiry.
+        assert!(asked[0].get("expires_at").is_none());
         assert_eq!(
             asked[0]["message"],
             "Do you really want to delete the \"A\" alert?"
