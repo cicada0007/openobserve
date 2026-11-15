@@ -165,9 +165,6 @@ const STAGGER = [
 // Time the pointer may spend crossing the gap between the icon and the previews.
 const LEAVE_GRACE_MS = 150;
 
-/** Unitless px from the page's end edge to the launcher's start edge; table pagers end before it. */
-export const LAUNCHER_INSET_VAR = "--o-assistant-launcher-end";
-
 const MAIN_SELECTOR = "main[data-test='main-content']";
 
 /** The first PREVIEW_CHARS characters of a title, with an ellipsis when cut. */
@@ -186,6 +183,7 @@ import AssistantStatusDot from "@/components/ai-assistant/common/AssistantStatus
 import { useTheme } from "@/composables/useTheme";
 import OBadge from "@/lib/core/Badge/OBadge.vue";
 import OButton from "@/lib/core/Button/OButton.vue";
+import { publishFloatingObstacle } from "@/lib/core/Table/composables/useFloatingClearance";
 import { raw, useI18nTyped } from "@/types/i18n";
 import { getImageURL } from "@/utils/zincutils";
 
@@ -245,23 +243,24 @@ function onRestore(sid: Sid): void {
   emit("restore", sid);
 }
 
-// The launcher floats over the page's bottom-end corner, so it publishes its footprint on the page, never on overlays.
+// Scoped to the page so pagers in overlays and drawers, which sit above the launcher, keep their full width.
 let footprint: ResizeObserver | null = null;
 
 function publishFootprint(): void {
-  const main = document.querySelector<HTMLElement>(MAIN_SELECTOR);
-  if (!main) return;
-  const box = root.value?.getBoundingClientRect();
-  const end = main.getBoundingClientRect().right;
-  if (!box?.width || box.left >= end) main.style.removeProperty(LAUNCHER_INSET_VAR);
-  else main.style.setProperty(LAUNCHER_INSET_VAR, String(Math.ceil(end - box.left)));
+  const main = document.querySelector(MAIN_SELECTOR);
+  const rect = root.value?.getBoundingClientRect();
+  publishFloatingObstacle(main && rect?.width ? { rect, scope: main } : null);
 }
 
 onMounted(() => {
   publishFootprint();
   window.addEventListener("resize", publishFootprint);
   if (typeof ResizeObserver === "undefined") return;
-  footprint = new ResizeObserver(publishFootprint);
+  // The launcher's end offset follows the page's width a frame later, so a page resize re-reads it then too.
+  footprint = new ResizeObserver(() => {
+    publishFootprint();
+    requestAnimationFrame(publishFootprint);
+  });
   if (root.value) footprint.observe(root.value);
   const main = document.querySelector(MAIN_SELECTOR);
   if (main) footprint.observe(main);
@@ -271,7 +270,7 @@ onBeforeUnmount(() => {
   clearTimeout(timer);
   footprint?.disconnect();
   window.removeEventListener("resize", publishFootprint);
-  document.querySelector<HTMLElement>(MAIN_SELECTOR)?.style.removeProperty(LAUNCHER_INSET_VAR);
+  publishFloatingObstacle(null);
 });
 
 defineExpose({ focus: () => toggleButton.value?.$el?.focus() });
