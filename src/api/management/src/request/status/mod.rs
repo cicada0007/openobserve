@@ -525,7 +525,9 @@ pub async fn zo_config(
 
     // per-user value: false unless this caller may use the search inspector
     let search_inspector_enabled = match &user_email {
-        Some(Headers(user)) => search_inspector_permitted(&org_id, &user.user_id).await,
+        Some(Headers(user)) => {
+            search_inspector_for_edition(search_inspector_permitted(&org_id, &user.user_id).await)
+        }
         None => false,
     };
     let is_org_admin = match &user_email {
@@ -918,6 +920,12 @@ fn rca_enabled_for(
 ) -> bool {
     incidents_enabled && rca_enabled && ai_enabled && has_agent_target
 }
+
+/// The search inspector is enterprise-only, so OSS never offers it even to root.
+fn search_inspector_for_edition(permitted: bool) -> bool {
+    cfg!(feature = "enterprise") && permitted
+}
+
 async fn org_admin(org_id: &str, user_id: &str) -> bool {
     is_root_user(user_id)
         || openobserve_core::users::get_user(Some(org_id), user_id)
@@ -2332,6 +2340,12 @@ mod tests {
     use serde_json;
 
     use super::*;
+
+    #[cfg(not(feature = "enterprise"))]
+    #[test]
+    fn oss_never_reports_the_search_inspector_enabled() {
+        assert!(!search_inspector_for_edition(true));
+    }
 
     #[test]
     fn with_downtimes_off_all_names_the_modules_main_names() {
