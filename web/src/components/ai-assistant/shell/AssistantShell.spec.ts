@@ -21,7 +21,9 @@ import type { AssistantCapability, GateCode, Starter } from "@/composables/assis
 import { assistantSessionSourceKey, viewedChatSids } from "@/composables/assistant/pure";
 import OSkeleton from "@/lib/feedback/Skeleton/OSkeleton.vue";
 import { toast } from "@/lib/feedback/Toast/useToast";
+import { CREDIT_NOTICE_PREFIX } from "@/composables/assistant/useAssistantCredits";
 import type { HistoryDeps } from "@/composables/assistant/useAssistantHistory";
+import { usePaidOverageConsent } from "@/composables/usePaidOverageConsent";
 import { raw } from "@/types/i18n";
 
 import { fakeAssistant, fakeRouter, fakeVuex, hintBus } from "../__tests__/fakeAssistant";
@@ -1166,20 +1168,7 @@ describe("AssistantShell decision cards", () => {
         askedIn: "here",
         expiresAt: Date.now() + 25_000,
       };
-    if (card === "consent")
-      store.state.sessions[sid].pendingConsent = {
-        org: "default",
-        feature: "ai_credits",
-        turnId: "t1",
-        snapshot: { text: "why?", chips: [], images: [], mentions: [], timeOverride: null },
-        status: {
-          feature: "ai_credits",
-          organization: { org_id: "default", enabled: false, can_manage: true },
-          payer: null,
-          effective: false,
-          billing_status: "eligible",
-        },
-      };
+    if (card === "consent") store.state.sessions[sid].turn = { state: "awaiting_consent" };
     if (open) store.open({ kind: "sidebar" }, { sid, focus: "none" });
     const wrapper = mount(AssistantShell, {
       props: { placement: "sidebar" },
@@ -1331,17 +1320,27 @@ describe("AssistantShell decision cards", () => {
     });
   });
 
-  it("renders the consent card named by its org, and Cancel declines through the store", async () => {
-    const { wrapper, store, sid } = await mountWithCard("consent");
-    const resolve = vi.spyOn(store, "resolveConsent").mockResolvedValue();
-    expect(wrapper.get('[data-test="assistant-consent-card-org"]').text()).toBe(
-      "Enable paid AI usage for default?",
+  it("shows the shared paid-usage prompt inline while the turn waits, and Cancel declines it", async () => {
+    const { wrapper } = await mountWithCard("consent");
+    const answer = usePaidOverageConsent().promptForConsent(
+      "default",
+      "ai_credits",
+      {
+        feature: "ai_credits",
+        organization: { org_id: "default", enabled: false, can_manage: true },
+        payer: null,
+        effective: false,
+        billing_status: "eligible",
+      },
+      undefined,
+      "chat",
     );
-    wrapper
-      .get('[data-test="assistant-consent-card-cancel"]')
-      .element.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
     await flushPromises();
-    expect(resolve).toHaveBeenCalledWith(sid, false, false);
+    expect(wrapper.find('[data-test="o2-ai-paid-usage-consent"]').exists()).toBe(true);
+    await wrapper.get('[data-test="o2-ai-paid-usage-consent-cancel"]').trigger("click");
+    await expect(answer).resolves.toBe(false);
+    await flushPromises();
+    expect(wrapper.find('[data-test="o2-ai-paid-usage-consent"]').exists()).toBe(false);
   });
 
   it("clears the declined-consent note on the first keystroke after it", async () => {
@@ -1617,6 +1616,32 @@ describe("AssistantShell history states", () => {
     expect(wrapper.find('[data-test="assistant-credit-meter"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("90");
     creditUsage.current = null;
+  });
+
+  it("shows the low-credit notice in the composer on Cloud, and Dismiss keeps it closed", async () => {
+    creditUsage.current = { mode: "free", credits_used: 72, credits_limit: 100 };
+    fake.current = fakeAssistant("available", { edition: "cloud" }, {}, 80, false, {});
+    const store = fake.current.store;
+    // The real composer, not the slot stub: the notice lives in its strip.
+    const wrapper = mount(AssistantShell, {
+      props: { placement: "sidebar" },
+      slots: { transcript: "<div />" },
+      global: { plugins: [fakeRouter(), fakeVuex()] },
+      attachTo: document.body,
+    });
+    open(store);
+    await flushPromises();
+    expect(wrapper.get('[data-notice="creditsLow"]').text()).toContain(
+      "70% of included AI credits",
+    );
+    await wrapper.get('[data-test="assistant-composer-notice-dismissCredits"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-notice="creditsLow"]').exists()).toBe(false);
+    expect(Object.keys(localStorage).some((key) => key.startsWith(CREDIT_NOTICE_PREFIX))).toBe(
+      true,
+    );
+    creditUsage.current = null;
+    wrapper.unmount();
   });
 
   it("replaces the body when another tab deletes the open chat, and writes nothing back", async () => {

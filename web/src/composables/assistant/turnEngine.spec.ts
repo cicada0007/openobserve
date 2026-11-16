@@ -97,6 +97,7 @@ function setup(
     page?: Record<string, unknown>;
     pageRead?: Promise<void>;
     dataLevel?: "schema" | "aggregates" | "raw";
+    autoNavigation?: boolean;
   } = {},
 ) {
   const persistence = { value: opts.persistence ?? true };
@@ -165,6 +166,7 @@ function setup(
     raf: (cb) => cb(),
     visibility,
     ...(opts.approvals && { approvals: () => opts.approvals! }),
+    ...(opts.autoNavigation !== undefined && { autoNavigation: () => opts.autoNavigation! }),
   });
   deps.engine = engine;
   store = createAssistantStore(deps, {
@@ -784,7 +786,7 @@ describe("turnEngine: refusals and retry (HT-03)", () => {
 });
 
 describe("turnEngine: consent (CC-06)", () => {
-  it("waits on consent with the snapshot, resends the same turn once on Enable", async () => {
+  it("waits on consent, hands the status to the prompt, resends the same turn once on Enable", async () => {
     const h = setup();
     const handler = vi.fn();
     h.engine.setConsentHandler(handler);
@@ -793,17 +795,11 @@ describe("turnEngine: consent (CC-06)", () => {
     const run = h.store.send(h.current.sid);
     await settle();
     expect(h.session().turn).toEqual({ state: "awaiting_consent" });
-    expect(h.session().pendingConsent).toMatchObject({
+    expect(handler).toHaveBeenCalledWith(h.current.sid, {
       org: "org1",
-      feature: "ai_credits",
       turnId: h.last().req.turnId,
-      snapshot: { text: "why?" },
-      status: { billing_status: "eligible" },
+      status: expect.objectContaining({ billing_status: "eligible" }),
     });
-    expect(handler).toHaveBeenCalledWith(
-      h.current.sid,
-      expect.objectContaining({ code: "consent_declined", httpStatus: 412 }),
-    );
     const turnId = h.last().req.turnId;
     void h.engine.send(h.current.sid, { turnId });
     await settle();
@@ -839,25 +835,7 @@ describe("turnEngine: consent (CC-06)", () => {
       state: "refused",
       error: { code: "consent_declined" },
     });
-    expect(h.session().pendingConsent).toBeNull();
     expect(h.session().composer.text).toBe("why?");
-    expect(h.client.stop).not.toHaveBeenCalled();
-  });
-
-  it("ends a turn whose paid usage went on after a Stop unsent, the prompt back, with no claim it stayed off", async () => {
-    const h = setup();
-    h.type("why?");
-    h.results.push(refusal(412, consentBody));
-    const run = h.store.send(h.current.sid);
-    await settle();
-    h.engine.consentWithdrawn?.(h.current.sid);
-    await expect(run).resolves.toMatchObject({
-      state: "refused",
-      error: { code: "stopped_before_send" },
-    });
-    expect(h.session().pendingConsent).toBeNull();
-    expect(h.session().composer.text).toBe("why?");
-    expect(h.sends).toHaveLength(1);
     expect(h.client.stop).not.toHaveBeenCalled();
   });
 });
@@ -2666,5 +2644,61 @@ describe("turnEngine: the chat list after the turn ends", () => {
     expect(rows.filter((row) => row.group === "answering" || row.group === "needs_you")).toEqual(
       [],
     );
+  });
+});
+
+describe("turnEngine: auto navigation", () => {
+  const nav: AssistantFrame = {
+    type: "navigation_action",
+    resource_type: "dashboard",
+    action: "open",
+    target: { dashboard: "d1", name: "Checkout" },
+  };
+
+  async function navigateWith(autoNavigation: boolean) {
+    const h = setup({ autoNavigation });
+    h.store.open({ kind: "sidebar" }, { sid: h.current.sid, focus: "none" });
+    const dispatch = vi.spyOn(h.store, "dispatch").mockResolvedValue({ ok: true });
+    h.type("open the checkout dashboard");
+    void h.store.send(h.current.sid);
+    await settle();
+    h.feed({ type: "message_delta", content: "Opening it." }, nav);
+    await settle();
+    return { h, dispatch };
+  }
+
+  const linkBlocks = (h: ReturnType<typeof setup>) =>
+    (h.session().messages[1].contentBlocks ?? []).filter((block) => block.type === "link");
+
+  it("opens the link once in the same tab when on, and keeps the card as the record", async () => {
+    const { h, dispatch } = await navigateWith(true);
+    // A tail resending the same frame never navigates again.
+    h.feed(nav);
+    await settle();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(h.current.sid, {
+      kind: "navigate",
+      target: { name: "viewDashboard", query: expect.objectContaining({ dashboard: "d1" }) },
+      newTab: false,
+      label: raw("Checkout"),
+    });
+    expect(linkBlocks(h).length).toBeGreaterThan(0);
+  });
+
+  it("only shows the card when off", async () => {
+    const { h, dispatch } = await navigateWith(false);
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(linkBlocks(h)).toHaveLength(1);
+  });
+
+  it("never navigates for a chat that is not on screen", async () => {
+    const h = setup({ autoNavigation: true });
+    const dispatch = vi.spyOn(h.store, "dispatch").mockResolvedValue({ ok: true });
+    h.type("open the checkout dashboard");
+    void h.store.send(h.current.sid);
+    await settle();
+    h.feed(nav);
+    await settle();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

@@ -381,16 +381,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   :sid="decisions.sid"
                   @stop="stopElsewhere"
                 />
-                <AssistantConsentCard
-                  v-if="consentCard"
-                  :key="`consent:${consentCard.sid}:${consentCard.orgId}`"
-                  v-bind="consentCard"
-                  @enable="resolveConsent(true, true)"
-                  @cancel="resolveConsent(false)"
-                  @open-billing="trackConsent('view_billing')"
-                  @ask-admin="trackConsent('ask_admin')"
-                  @announce="(text) => region?.announce(text)"
-                />
+                <O2AIPaidUsageConsent v-if="showConsent" />
               </div>
             </slot>
           </template>
@@ -504,7 +495,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   ? t('assistant.composer.rateLimited')
                   : undefined
           "
+          :low-credits="lowCredits"
           @show-running="openChats"
+          @low-credits="onLowCredits"
         >
           <template #chips>
             <slot name="tray">
@@ -626,7 +619,7 @@ import {
   type ApprovalCardView,
   type AssistantApprovalsHost,
 } from "@/components/ai-assistant/approvals/approvals.types";
-import AssistantConsentCard from "@/components/ai-assistant/credits/AssistantConsentCard.vue";
+import O2AIPaidUsageConsent from "@/components/ai-assistant/chat/O2AIPaidUsageConsent.vue";
 import AssistantErrorRow from "@/components/ai-assistant/common/AssistantErrorRow.vue";
 import AssistantIconButton from "@/components/ai-assistant/common/AssistantIconButton.vue";
 import AssistantMark from "@/components/ai-assistant/common/AssistantMark.vue";
@@ -660,7 +653,6 @@ import AssistantWelcome from "@/components/ai-assistant/welcome/AssistantWelcome
 import {
   approvalOutcomeOf,
   assistantApprovals,
-  consentCardFor,
   orgDisplayName,
   isRunning,
   noteAssistantKeydown,
@@ -672,6 +664,7 @@ import {
   turnLockKey,
   useAssistantCapability,
   useAssistantCredits,
+  useCreditNotice,
   useAssistantName,
   useAssistantHistory,
   useAssistantRuns,
@@ -707,6 +700,7 @@ import OSkeleton from "@/lib/feedback/Skeleton/OSkeleton.vue";
 import ODialog from "@/lib/overlay/Dialog/ODialog.vue";
 import ODropdownItem from "@/lib/overlay/Dropdown/ODropdownItem.vue";
 import OTooltip from "@/lib/overlay/Tooltip/OTooltip.vue";
+import { useChatConsentSurface } from "@/composables/usePaidOverageConsent";
 import { trackAssistant } from "@/services/assistantAnalytics";
 import { refreshSession } from "@/services/http";
 import type { ChatMessage, TurnOutcomeRecord } from "@/ts/interfaces/chat";
@@ -997,6 +991,23 @@ const credits = useAssistantCredits(
   () => capability.value.isAdmin,
 );
 
+// The old chat showed the low-credit warning above the input; the composer strip carries it now.
+const creditNotice = useCreditNotice(
+  () => store.state.userOrgKey,
+  () => (metered.value ? credits.usage.value : null),
+  () => visible.value,
+);
+const lowCredits = computed(() => {
+  const threshold = creditNotice.threshold.value;
+  const usage = credits.usage.value;
+  return threshold && usage ? { threshold, usage } : null;
+});
+
+function onLowCredits(action: "manage" | "dismiss"): void {
+  if (action === "dismiss") creditNotice.dismiss();
+  else creditNotice.noteAction("manage");
+}
+
 // The welcome's data is built only once the welcome shows, so a gated container never reads it (IW-05 AC 10).
 const welcomeScope = effectScope();
 const welcome = shallowRef<ReturnType<typeof useAssistantStarters> | null>(null);
@@ -1135,9 +1146,12 @@ const approvalElsewhere = computed(
   () => !!decisions.value && turnLock.value === "approval_elsewhere",
 );
 
-const consentCard = computed(() =>
-  decisions.value ? consentCardFor(session.value, orgNameOf, "card") : null,
+// The org-wide paid-usage prompt shows here while this chat's turn waits on it, else in the global dialog.
+const awaitingConsent = computed(
+  () => !!decisions.value && session.value?.turn.state === "awaiting_consent",
 );
+const { showInChat } = useChatConsentSurface(() => awaitingConsent.value);
+const showConsent = computed(() => awaitingConsent.value && showInChat.value);
 
 const reviewClock = ref(Date.now());
 let reviewTimer: ReturnType<typeof setInterval> | null = null;
@@ -1231,24 +1245,6 @@ function onExtend(): void {
 function stopElsewhere(): void {
   const sid = activeSid.value;
   if (sid) approvalsHost.stop(sid);
-}
-
-function resolveConsent(accepted: boolean, acknowledged = false): void {
-  const sid = activeSid.value;
-  if (!sid) return;
-  void store.resolveConsent(sid, accepted, acknowledged);
-  if (!accepted) focusAfterAction();
-}
-
-function trackConsent(step: "view_billing" | "ask_admin"): void {
-  const card = consentCard.value;
-  if (!card) return;
-  trackAssistant("ai_consent", {
-    step,
-    surface: "chat",
-    org_match: card.orgId === org.value,
-    plan_type: card.planType,
-  });
 }
 
 function reviewSheetRequest(): void {
@@ -1477,6 +1473,16 @@ onMounted(() => {
   document.addEventListener("visibilitychange", onVisibility);
   offs.push(
     registerAssistantFocusTarget("answer", () => visible.value && goToAnswer()),
+    // Ctrl+I reaches the inline paid-usage prompt as it does an approval card.
+    registerAssistantFocusTarget("card", () => {
+      const first = showConsent.value
+        ? root.value?.querySelector<HTMLElement>(
+            '[data-test="o2-ai-paid-usage-consent"] :is(a, button, [role="checkbox"]):not([disabled])',
+          )
+        : null;
+      first?.focus();
+      return !!first;
+    }),
     () => window.removeEventListener("online", onOnline),
     () => window.removeEventListener("offline", onOffline),
     () => document.removeEventListener("visibilitychange", onVisibility),
@@ -1502,7 +1508,11 @@ watch(
 
 // A resolved card unmounts under the pressed button; focus goes to its record's action, else the composer.
 watch(
-  () => [session.value?.pendingApproval?.id ?? null, !!session.value?.pendingConsent] as const,
+  () =>
+    [
+      session.value?.pendingApproval?.id ?? null,
+      session.value?.turn.state === "awaiting_consent",
+    ] as const,
   async ([id, consent], [before, hadConsent]) => {
     if ((!before || id) && (!hadConsent || consent)) return;
     await nextTick();

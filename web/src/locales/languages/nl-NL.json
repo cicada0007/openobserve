@@ -10398,31 +10398,12 @@
     "hoursAgo": "{count} uur geleden",
     "daysAgo": "{count} d geleden",
     "cards": {
-      "firingAlerts": "Afgaande alarmen",
-      "failingRules": "Falende regels",
-      "openIncidents": "Open incidenten",
-      "pipelineErrors": "Pipelinefouten",
-      "pipelinesOf": "van {enabled} ingeschakeld",
-      "quietStreams": "Stille streams",
-      "firingNone": "Geen afgaande",
-      "noAlertRules": "Geen alarmregels",
-      "noEnabledRules": "Geen ingeschakelde regels",
-      "failingNone": "Geen falende",
-      "failingNote": "Laatste evaluatie gaf een fout",
-      "incidentsNone": "Geen open",
-      "noPipelines": "Geen pipelines",
-      "noStreams": "Geen streams",
-      "quietNote": "Geen nieuwe data in de afgelopen 7 dagen",
-      "criticalUnit": "{count} op kritiek niveau",
-      "deliveryFailures": "Fouten bij alarmlevering",
-      "deliveryNote": "Alarmen die afgingen maar geen melding konden versturen",
-      "oldestFiring": "Langst afgaand: {age}"
+      "openIncidents": "Open incidenten"
     },
     "state": {
       "tileForbidden": "Geen toegang",
       "tileLocked": "Vergrendeld",
       "tileError": "Kon niet laden",
-      "tileUnavailable": "Niet beschikbaar",
       "sectionLocked": "Beschikbaar met een enterprise-licentie",
       "sectionForbidden": "Je rol kan deze gegevens niet zien. Vraag een org-beheerder om toegang."
     },
@@ -10544,20 +10525,6 @@
       "retry": "Opnieuw proberen"
     },
     "dataAsOf": "Gegevens per {time}",
-    "status": {
-      "attention": "Vraagt aandacht",
-      "checking": "Controleren…",
-      "partial": "Sommige controles konden niet worden geladen",
-      "clear": "Niets vraagt aandacht",
-      "items": {
-        "firing": "{count} alarm dat afgaat | {count} alarms die afgaan",
-        "failing": "{count} regel die faalt | {count} regels die falen",
-        "incidents": "{count} open incident | {count} open incidenten",
-        "pipelines": "{count} pipeline met fouten | {count} pipelines met fouten",
-        "quiet": "{count} stille stream | {count} stille streams"
-      },
-      "unmonitored": "Er wordt nog niets gemonitord"
-    },
     "timeRange": {
       "heading": "In het geselecteerde tijdsbereik"
     }
@@ -10760,6 +10727,7 @@
     "aiExhaustedMessage": "Neem een abonnement om AI te blijven gebruiken. Verder gebruik wordt gefactureerd op de factuur van deze organisatie.",
     "aiContractExhaustedMessage": "Neem contact op met uw accountmanager om meer AI-tegoed toe te voegen",
     "aiPayerSubscribeMessage": "De facturatie voor deze organisatie wordt beheerd door {payer}. Vraag een beheerder van {payer} om een abonnement te nemen; verder gebruik wordt gefactureerd op de factuur ervan.",
+    "aiUsedByFeature": "Assistent en querygeneratie: {chat} · Incidentanalyse: {incident} · Heranalyse: {reanalysis}",
     "aiPaygMessage": "Gratis credits uitgeput — gebruik wordt gefactureerd op het abonnement",
     "billingGroup": {
       "tabLabel": "Factureringsgroep",
@@ -30242,6 +30210,15 @@
       "undone": {
         "applyOne": "Undone: {title} is back to how it was.",
         "applyMany": "Undone: {count} change is back to how it was. | Undone: {count} changes are back to how they were."
+      }
+    }
+  },
+  "assistant": {
+    "composer": {
+      "autoNavigation": {
+        "label": "Autonavigatie",
+        "enabledTooltip": "Automatische navigatie ingeschakeld - {product} navigeert automatisch zonder bevestiging",
+        "disabledTooltip": "Autonavigatie uitgeschakeld - {product} zal dit vragen voordat u gaat navigeren"
       }
     }
   }

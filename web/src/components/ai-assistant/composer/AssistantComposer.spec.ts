@@ -268,7 +268,7 @@ describe("rows (§1, S1)", () => {
     );
   });
 
-  it("puts + and the agent pill on the left and mic, Send on the right, on one line, with no @ button or ⓘ", async () => {
+  it("puts +, the agent pill and Auto Navigation on the left and mic, Send on the right, on one line, with no @ button or ⓘ", async () => {
     resetVoiceForTests(fakeVoiceEngine());
     const { wrapper } = setup();
     setVoiceOptIn("k1", true);
@@ -279,6 +279,8 @@ describe("rows (§1, S1)", () => {
       "assistant-composer-plus",
       "assistant-context-chip-time",
       "assistant-agent-pill",
+      "assistant-composer-auto-navigation",
+      "assistant-composer-auto-navigation-btn",
     ]);
     expect(
       right.findAll('[data-test^="assistant-"]').map((n) => n.attributes("data-test")),
@@ -367,7 +369,7 @@ describe("rows (§1, S1)", () => {
     expect(wrapper.find('[data-test="assistant-composer-corner"]').exists()).toBe(false);
     expect(textarea().classes()).not.toContain("pe-7!");
     await wrapper.setProps({ accessLost: false });
-    store.state.sessions[sid].pendingConsent = { id: "c1" } as never;
+    store.state.sessions[sid].turn = { state: "awaiting_consent" };
     await flushPromises();
     expect(sees().exists()).toBe(false);
   });
@@ -1154,10 +1156,10 @@ describe("boards 04–06: inert field, error row, Stop and Send (S3, S4, S6, S7)
     expect(inert().findComponent(OIcon).props("name")).toBe("pause");
     expect(inert().attributes("title")).toBe("Decide above to continue");
     store.state.sessions[sid].pendingApproval = null;
-    store.state.sessions[sid].pendingConsent = { id: "p1" } as never;
+    store.state.sessions[sid].turn = { state: "awaiting_consent" };
     await flushPromises();
     expect(inert().exists()).toBe(true);
-    store.state.sessions[sid].pendingConsent = null;
+    store.state.sessions[sid].turn = { state: "idle" };
     await flushPromises();
     expect(inert().exists()).toBe(false);
   });
@@ -1453,6 +1455,48 @@ describe("round 2 (U7–U9, U12, U16, U18–U19, F5, F8)", () => {
     expect(notice().attributes("title")).toBe(
       "AI credits are used up for default. Your message wasn't sent.",
     );
+  });
+
+  it.each([70, 90] as const)(
+    "shows the %s percent low-credit notice with the per-chat cost, Plans and Dismiss",
+    async (threshold) => {
+      const { wrapper } = setup();
+      wrapper.vm.$router.addRoute({
+        path: "/plans",
+        name: "plans",
+        component: { render: () => null },
+      });
+      const usage = {
+        mode: "free" as const,
+        credits_used: threshold,
+        credits_limit: 100,
+        costs: { chat: 1, incident: 5 },
+      };
+      await wrapper.setProps({ lowCredits: { threshold, usage } });
+      const notice = wrapper.get('[data-notice="creditsLow"]');
+      expect(notice.text()).toContain(`${threshold}% of included AI credits`);
+      expect(notice.attributes("title")).toBe(
+        `${threshold}% of included AI credits used · they don't renew. A message uses 1 credit. Incident analysis uses 5 from the same credits.`,
+      );
+      expect(wrapper.get('[data-test="assistant-composer-notice-manageUsage"]').text()).toBe(
+        "Plans",
+      );
+      await wrapper.get('[data-test="assistant-composer-notice-dismissCredits"]').trigger("click");
+      expect(wrapper.emitted("low-credits")).toEqual([["dismiss"]]);
+      await wrapper.setProps({ lowCredits: null });
+      expect(wrapper.find('[data-notice="creditsLow"]').exists()).toBe(false);
+    },
+  );
+
+  it("lets the used-up notice win over the low-credit one", async () => {
+    const { wrapper, store } = setup({
+      lowCredits: { threshold: 90, usage: { mode: "free", credits_used: 95, credits_limit: 100 } },
+    });
+    store.state.capability.creditMode = "exhausted";
+    await flushPromises();
+    expect(wrapper.find('[data-notice="credits"]').exists()).toBe(true);
+    expect(wrapper.find('[data-notice="creditsLow"]').exists()).toBe(false);
+    store.state.capability.creditMode = undefined;
   });
 
   it("keeps the used-up credits line while the chat's history is unavailable", async () => {
@@ -2047,7 +2091,7 @@ describe("dictation (WP-48)", () => {
   it("stops when a card arrives; the inert frame keeps the mic, crossed and off", async () => {
     const ctx = voiceSetup();
     await listen(ctx);
-    ctx.store.state.sessions[ctx.sid].pendingConsent = { id: "c1" } as never;
+    ctx.store.state.sessions[ctx.sid].turn = { state: "awaiting_consent" };
     await flushPromises();
     expect(ctx.wrapper.get('[data-test="assistant-composer"]').attributes("data-state")).toBe(
       "inert",
@@ -2175,7 +2219,7 @@ describe("dictation (WP-48)", () => {
 
   it("does not dictate on a hold while a card holds the composer", async () => {
     const ctx = voiceSetup();
-    ctx.store.state.sessions[ctx.sid].pendingConsent = { id: "c1" } as never;
+    ctx.store.state.sessions[ctx.sid].turn = { state: "awaiting_consent" };
     await flushPromises();
     vi.useFakeTimers();
     ctx.textarea().element.focus();
@@ -2205,5 +2249,35 @@ describe("dictation (WP-48)", () => {
     button.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
     await flushPromises();
     expect(document.activeElement).toBe(ctx.textarea().element);
+  });
+});
+
+describe("AssistantComposer: auto navigation toggle", () => {
+  const TOGGLE = '[data-test="assistant-composer-auto-navigation-btn"]';
+
+  it("starts on and keeps a turn-off for this chat", async () => {
+    const { wrapper, store, sid } = setup();
+    const toggle = () => wrapper.get(TOGGLE);
+    expect(toggle().attributes("aria-checked")).toBe("true");
+    await toggle().trigger("click");
+    expect(toggle().attributes("aria-checked")).toBe("false");
+    const saved = localStorage.getItem(`ai-chat-auto-navigation:${store.state.userOrgKey}`);
+    expect(JSON.parse(saved!)).toEqual({ [sid]: false });
+  });
+
+  it("is a switch named by the label with no visible text, shown before the first message", () => {
+    const { wrapper } = setup({}, false);
+    const toggle = wrapper.get(TOGGLE);
+    expect(toggle.attributes("role")).toBe("switch");
+    expect(toggle.attributes("aria-checked")).toBe("true");
+    const name = wrapper.get(`#${toggle.attributes("aria-labelledby")}`);
+    expect(name.text()).toBe("Auto Navigation");
+    expect(name.get(".sr-only").text()).toBe("Auto Navigation");
+  });
+
+  it("keeps a turn-off made before a chat exists", async () => {
+    const { wrapper } = setup({}, false);
+    await wrapper.get(TOGGLE).trigger("click");
+    expect(wrapper.get(TOGGLE).attributes("aria-checked")).toBe("false");
   });
 });

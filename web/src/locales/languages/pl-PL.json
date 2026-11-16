@@ -10398,31 +10398,12 @@
     "hoursAgo": "{count} godz. temu",
     "daysAgo": "{count} d. temu",
     "cards": {
-      "firingAlerts": "Wyzwolone alerty",
-      "failingRules": "Reguły z błędami",
-      "openIncidents": "Otwarte incydenty",
-      "pipelineErrors": "Błędy potoku",
-      "pipelinesOf": "z {enabled} włączonych",
-      "quietStreams": "Ciche strumienie",
-      "firingNone": "Brak wyzwolonych",
-      "noAlertRules": "Brak reguł alertów",
-      "noEnabledRules": "Brak włączonych reguł",
-      "failingNone": "Brak błędów",
-      "failingNote": "Ostatnia ewaluacja zakończyła się błędem",
-      "incidentsNone": "Brak otwartych",
-      "noPipelines": "Brak potoków",
-      "noStreams": "Brak strumieni",
-      "quietNote": "Zaprzestały zapisu w ciągu ostatnich 7 dni",
-      "criticalUnit": "{count} na poziomie krytycznym",
-      "deliveryFailures": "Błędy dostarczania alertów",
-      "deliveryNote": "Alerty, które zostały wyzwolone, ale nie mogły powiadomić",
-      "oldestFiring": "Najstarszy wyzwolony od {age}"
+      "openIncidents": "Otwarte incydenty"
     },
     "state": {
       "tileForbidden": "Brak dostępu",
       "tileLocked": "Zablokowane",
       "tileError": "Nie można załadować",
-      "tileUnavailable": "Niedostępne",
       "sectionLocked": "Dostępne w licencji enterprise",
       "sectionForbidden": "Twoja rola nie może wyświetlić tych danych. Poproś administratora organizacji o dostęp."
     },
@@ -10544,20 +10525,6 @@
       "retry": "Ponów"
     },
     "dataAsOf": "Dane na {time}",
-    "status": {
-      "attention": "Wymaga uwagi",
-      "checking": "Sprawdzanie…",
-      "partial": "Nie udało się wczytać niektórych kontroli",
-      "clear": "Nic nie wymaga uwagi",
-      "items": {
-        "firing": "{count} alert wyzwolony | {count} wyzwolonych alertów",
-        "failing": "{count} reguła z błędem | {count} reguł z błędem",
-        "incidents": "{count} otwarty incydent | {count} otwartych incydentów",
-        "pipelines": "{count} potok z błędami | {count} potoków z błędami",
-        "quiet": "{count} nieaktywny strumień | {count} nieaktywnych strumieni"
-      },
-      "unmonitored": "Nic nie jest jeszcze monitorowane"
-    },
     "timeRange": {
       "heading": "W wybranym zakresie czasu"
     }
@@ -10760,6 +10727,7 @@
     "aiExhaustedMessage": "Subskrybuj, aby dalej korzystać z AI. Dalsze użycie zostanie rozliczone na fakturze tej organizacji.",
     "aiContractExhaustedMessage": "Skontaktuj się z menedżerem konta, aby dodać więcej kredytów AI",
     "aiPayerSubscribeMessage": "Rozliczeniami tej organizacji zarządza {payer}. Poproś administratora {payer} o subskrypcję; dalsze użycie zostanie rozliczone na jej fakturze.",
+    "aiUsedByFeature": "Asystent i generowanie zapytań: {chat} · Analiza incydentów: {incident} · Ponowna analiza: {reanalysis}",
     "aiPaygMessage": "Bezpłatne kredyty wyczerpane — użycie fakturowane na subskrypcję",
     "billingGroup": {
       "tabLabel": "Grupa rozliczeniowa",
@@ -30242,6 +30210,15 @@
       "undone": {
         "applyOne": "Undone: {title} is back to how it was.",
         "applyMany": "Undone: {count} change is back to how it was. | Undone: {count} changes are back to how they were."
+      }
+    }
+  },
+  "assistant": {
+    "composer": {
+      "autoNavigation": {
+        "label": "Automatyczna nawigacja",
+        "enabledTooltip": "Automatyczna nawigacja włączona - {product} będzie nawigować automatycznie bez potwierdzenia",
+        "disabledTooltip": "Automatyczna nawigacja wyłączona - {product} zapyta przed nawigacją"
       }
     }
   }

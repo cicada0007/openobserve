@@ -277,7 +277,8 @@ function planOf(
 ): DoorPlan {
   const composerEmpty = !session || session.composer.text.trim() === "";
   const running = !!session && isRunning(session.turn);
-  const carded = !!session && (!!session.pendingApproval || !!session.pendingConsent);
+  const carded =
+    !!session && (!!session.pendingApproval || session.turn.state === "awaiting_consent");
   const wantsSend = args.intent === "send";
   const free = wantsSend && composerEmpty && !running && !carded;
   // A door never starts a turn this tab may not start; its prompt stays staged and the door says why.
@@ -319,11 +320,7 @@ function homeDoor(env: OpenAssistantEnv, args: OpenAssistantCall): "full" | "foc
   if (args.intent !== "open" || args.payload || args.seed?.length) return "full";
   const session = resolveThread(env, args, target);
   const live =
-    !!session &&
-    (isRunning(session.turn) ||
-      session.unread ||
-      !!session.pendingApproval ||
-      !!session.pendingConsent);
+    !!session && (isRunning(session.turn) || session.unread || !!session.pendingApproval);
   return live ? "full" : "focus";
 }
 
@@ -526,6 +523,9 @@ function stagePayload(
   for (const image of payload.images ?? []) store.addImage(sid, image);
   if (payload.timeOverride) store.setTimeOverride(sid, payload.timeOverride);
   if (payload.title && fresh) store.setTitle(sid, payload.title, "object");
+  // A blank chat reused for another door must not keep an earlier hand-off's pin.
+  if (payload.context) session.pinnedContext = { ...payload.context };
+  else if (fresh) delete session.pinnedContext;
   const staged = store.state.sessions[sid].composer.chips.length - before;
   // A repeated prompt the store skipped adds nothing, so the helper line would claim a change that did not happen.
   const changed = staged > 0 || store.state.sessions[sid].composer.text !== textBefore;

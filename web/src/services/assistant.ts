@@ -58,8 +58,6 @@ export interface AssistantCapabilitiesResponse {
   history_import?: boolean;
   /** `chat_stream` takes `replaces_turn_id`. */
   turn_versions?: boolean;
-  /** `POST /ai/feedback` stores the vote with its turn. */
-  feedback_stored?: boolean;
   rca_chat_mode?: boolean;
   data_sharing_level?: string;
   rca_feedback?: boolean;
@@ -72,6 +70,12 @@ export interface AssistantUsage {
   credits_used: number;
   credits_limit: number;
   resetsAt?: number;
+  /** Credits one chat message and one incident analysis take. */
+  costs?: { chat: number; incident: number };
+  /** Credits spent so far, by feature. */
+  used_by_feature?: { chat: number; incident: number; incident_reanalysis: number };
+  /** A contract org whose credits are out needs sales, not a subscription. */
+  requires_additional_credits?: boolean;
 }
 
 /** `POST /api/{org}/ai/capabilities/test` (B-06): no chat, no credit. */
@@ -123,19 +127,6 @@ export interface UndoResponse {
   /** The undo's own ledger row, not the object: that is `target.id`. */
   id?: string;
   target?: { id?: string | null };
-}
-
-/** `POST /ai/feedback`; `trace_id` ties the rating to the turn's workflow trace. */
-export interface FeedbackBody {
-  feedback_type: string;
-  query_index: number;
-  trace_id?: string;
-  /** The turn the vote is about; o2-ai ignores it until it stores votes with the turn. */
-  turn_id?: string;
-  comment?: string;
-  rating?: string;
-  /** 1–5 for `feedback_type: "rating"`. */
-  value?: number;
 }
 
 /** One row of `GET /api/{org}/ai/chats`; the marker, pin and agent fields are absent on today's server. */
@@ -295,6 +286,18 @@ const count = (value: unknown): number | null =>
     ? Math.floor(value)
     : null;
 
+/** Every key a safe count, or null, so a half-filled breakdown never shows. */
+function counts<K extends string>(body: unknown, keys: readonly K[]): Record<K, number> | null {
+  if (!body || typeof body !== "object") return null;
+  const out = {} as Record<K, number>;
+  for (const key of keys) {
+    const value = count((body as Record<string, unknown>)[key]);
+    if (value === null) return null;
+    out[key] = value;
+  }
+  return out;
+}
+
 /** The server's body is untrusted: an unknown mode or a non-numeric count reads as no usage. */
 export function parseAiUsage(body: unknown): AssistantUsage | null {
   if (!body || typeof body !== "object") return null;
@@ -313,6 +316,11 @@ export function parseAiUsage(body: unknown): AssistantUsage | null {
       ? Date.parse(value.resets_at)
       : NaN;
   if (!Number.isNaN(resets)) usage.resetsAt = resets;
+  const costs = counts(value.costs, ["chat", "incident"]);
+  if (costs) usage.costs = costs;
+  const byFeature = counts(value.used_by_feature, ["chat", "incident", "incident_reanalysis"]);
+  if (byFeature) usage.used_by_feature = byFeature;
+  if (value.requires_additional_credits === true) usage.requires_additional_credits = true;
   return usage;
 }
 
@@ -754,13 +762,6 @@ const assistant = {
         (row): row is ChatImportResult["failed"][number] => str(row?.client_id) && str(row?.code),
       ),
     };
-  },
-
-  feedback: async (org: string, sid: string, body: FeedbackBody): Promise<void> => {
-    await http().post(`/api/${enc(org)}/ai/feedback`, body, {
-      ...ASSISTANT_REQUEST,
-      headers: { "x-o2-assistant-session-id": sid },
-    });
   },
 };
 

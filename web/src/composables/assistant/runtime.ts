@@ -38,17 +38,15 @@ import { contextRegistry } from "@/composables/contextProviders/registry";
 import { requestOverviewFocus } from "@/composables/goto/goToRequests";
 import { queryClient } from "@/composables/query/queryClient";
 import { useAiDashboardEvents } from "@/composables/useAiDashboardEvents";
+import { isAutoNavigationEnabled } from "@/composables/useAutoNavigationPreferences";
 import useBreakpoint from "@/composables/useBreakpoint";
 import useHttpStreaming from "@/composables/useStreamingSearch";
-import { registerSessionConsentSurface } from "@/composables/usePaidOverageConsent";
 import assistantService, {
   type AssistantCapabilitiesResponse,
   type AssistantUsage,
   type ChatSummaryWire,
   type ChatsPage,
 } from "@/services/assistant";
-import type { PaidOverageFeature } from "@/services/paidOverage";
-import { paidOverageQuery, setPaidOverageMutation } from "@/services/paidOverage.queries";
 import { toast } from "@/lib/feedback/Toast/useToast";
 import { gt } from "@/types/i18n";
 import { copyToClipboard } from "@/utils/clipboard";
@@ -65,6 +63,7 @@ import { generateTraceContext } from "@/utils/zincutils";
 import { computeUserOrgKey } from "@/utils/userOrgKey";
 
 import { requestDashboardDraft } from "./actions/appliers/drafts";
+import { mustOpenElsewhere } from "./actions/appliers/navigation";
 import { pruneQueryRuns } from "./actions/appliers/query";
 import { registerBuiltInAppliers } from "./actions/appliers";
 import { createActionDispatcher, type ActionEnv } from "./actions/registry";
@@ -83,7 +82,7 @@ import type {
   HostRegistry,
   OpenAssistantResult,
 } from "./assistantStore.types";
-import { cancelConsentOnClose, createConsentRuntime, type ConsentRuntime } from "./consent";
+import { createTurnConsent } from "./consent";
 import { serialize } from "./context/serialize";
 import { createHintChannel, type AssistantHintChannel } from "./hints";
 import { isFullThreadRoute, isHomeAskShown } from "./fullThreadRoute";
@@ -144,7 +143,6 @@ export interface AssistantRuntime {
   hints: AssistantHintChannel;
   lifecycle: AssistantLifecycleRuntime;
   approvals: ApprovalsRuntime;
-  consent: ConsentRuntime;
   history: AssistantHistory;
   runs: AssistantRuns;
   keepAlive: ApprovalKeepAlive;
@@ -218,6 +216,7 @@ function buildRuntime(): AssistantRuntime {
         () => capability,
         () => lgUp.value,
         uiVersion,
+        () => hosts,
       ),
     );
 
@@ -253,10 +252,14 @@ function buildRuntime(): AssistantRuntime {
       t: gt,
     });
     deps.approvals = approvals;
-    const consent = createConsentRuntime(consentDeps(context, () => store, deps, hints));
-    deps.consent = consent;
-    deps.engine.setConsentHandler(consent.onConsentRequired);
-    registerSessionConsentSurface(consent.promptFor);
+    deps.engine.setConsentHandler(
+      createTurnConsent({
+        state: () => store.state,
+        // The engine resumes the waiting turn; the store would join the send still in flight instead.
+        send: (sid, turnId) => deps.engine.send(sid, { turnId }),
+        stop: (sid) => store.stop(sid),
+      }),
+    );
     const store = createAssistantStore(deps, {
       signOutKeys: () => orgKeysOf(context.value),
       remoteLight: () =>
@@ -267,7 +270,6 @@ function buildRuntime(): AssistantRuntime {
       turnLock: (sid) => lifecycle.turnLock(sid),
     });
     flushDraftsOnLeave(store);
-    cancelConsentOnClose(() => store.state, consent);
     // A deleted session, or one of the org the user just left, keeps no Run rows or searches.
     watch(
       () => {
@@ -317,7 +319,6 @@ function buildRuntime(): AssistantRuntime {
       endedTurns.add(hint.turnId);
       refreshUsage(hint.org);
     });
-    hints.on("consent_granted", (hint) => refreshUsage(hint.org));
     const runs = createRuns(
       runsDeps(
         context,
@@ -368,7 +369,6 @@ function buildRuntime(): AssistantRuntime {
       hints,
       lifecycle,
       approvals,
-      consent,
       history,
       runs,
       keepAlive,
@@ -541,6 +541,7 @@ function engineDeps(
   capability: () => AssistantCapabilityHandle,
   lgUp: () => boolean,
   uiVersion: ShallowRef<string>,
+  hosts: () => HostRegistry,
 ): TurnEngineDeps {
   return {
     client: useAssistantClient(),
@@ -567,6 +568,10 @@ function engineDeps(
     // The turn-stream route serves only a server that saves chats; it answers 404 otherwise.
     tailEnabled: () => capability().capability.value.persistence,
     approvals: () => deps.approvals,
+    // A docked or dirty page opens links in a new tab, which only a click may do.
+    autoNavigation: (sid) =>
+      isAutoNavigationEnabled(store().state.userOrgKey, sid) &&
+      !mustOpenElsewhere({ store, hosts: hosts() }),
   };
 }
 
@@ -593,47 +598,10 @@ function actionEnv(
     openTab: openTabWithoutOpener,
     copy: (text) => copyToClipboard(text, gt, { silent: true }),
     search: (request) => streamSearch(streaming, request, generateTraceContext().traceId),
-    feedback: (org, sid, body) => client.feedback(org, sid, body),
     confirm: (org, sid, body, timeoutMs) => client.confirm(org, sid, body, timeoutMs),
     undo: (org, ledgerId) => assistantService.undo(org, ledgerId),
     requestAlert: (prefill) => requestAlertCreation(prefill),
     requestDashboard: (draft) => requestDashboardDraft(draft),
-  };
-}
-
-// Writes go through the mutation's `meta.invalidates` and reads through the query, so the meter and Billing see the grant.
-function consentDeps(
-  context: ShallowRef<AssistantRuntimeContext | null>,
-  store: () => AssistantStoreInternal,
-  deps: AssistantStoreDeps,
-  hints: AssistantHintChannel,
-) {
-  return {
-    state: () => store().state,
-    // The engine resumes the waiting turn; the store would join the send still in flight instead.
-    send: (sid: string, turnId: string) => deps.engine.send(sid, { turnId }),
-    stop: (sid: string) => store().stop(sid),
-    withdraw: (sid: string) => deps.engine.consentWithdrawn?.(sid),
-    enable: (org: string, feature: PaidOverageFeature) =>
-      queryClient
-        .getMutationCache()
-        .build(queryClient, setPaidOverageMutation(org, feature))
-        .execute(true)
-        .finally(() => refreshUsage(org)),
-    read: (org: string, feature: PaidOverageFeature) =>
-      queryClient.fetchQuery({ ...paidOverageQuery(org, feature), staleTime: 0 }),
-    hints,
-    announce: (sid: string, key: Parameters<AssistantStoreInternal["announce"]>[1]) =>
-      store().announce(sid, key),
-    currentOrg: () => context.value?.getOrg()?.identifier ?? null,
-    currentUser: () => context.value?.getUser()?.email ?? "",
-    now: () => Date.now(),
-    onVisible: (cb: () => void) => {
-      if (typeof document === "undefined") return () => undefined;
-      const listener = () => document.visibilityState === "visible" && cb();
-      document.addEventListener("visibilitychange", listener);
-      return () => document.removeEventListener("visibilitychange", listener);
-    },
   };
 }
 

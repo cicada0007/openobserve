@@ -10398,31 +10398,12 @@
     "hoursAgo": "منذ {count}h",
     "daysAgo": "منذ {count}d",
     "cards": {
-      "firingAlerts": "التنبيهات قيد الإطلاق",
-      "failingRules": "القواعد الفاشلة",
-      "openIncidents": "الحوادث المفتوحة",
-      "pipelineErrors": "أخطاء مسار المعالجة",
-      "pipelinesOf": "من {enabled} مفعّل",
-      "quietStreams": "التدفقات الهادئة",
-      "firingNone": "لا شيء قيد الإطلاق",
-      "noAlertRules": "لا توجد قواعد تنبيه",
-      "noEnabledRules": "لا توجد قواعد مفعّلة",
-      "failingNone": "لا شيء فاشل",
-      "failingNote": "حدث خطأ في آخر تقييم",
-      "incidentsNone": "لا شيء مفتوح",
-      "noPipelines": "لا توجد مسارات معالجة",
-      "noStreams": "لا توجد تدفقات",
-      "quietNote": "توقفت عن الكتابة خلال آخر 7 أيام",
-      "criticalUnit": "{count} في المستوى الحرج",
-      "deliveryFailures": "إخفاقات تسليم التنبيهات",
-      "deliveryNote": "تنبيهات أُطلقت لكن تعذّر إشعارها",
-      "oldestFiring": "أقدم تنبيه قيد الإطلاق منذ {age}"
+      "openIncidents": "الحوادث المفتوحة"
     },
     "state": {
       "tileForbidden": "لا يوجد وصول",
       "tileLocked": "مقفل",
       "tileError": "تعذّر التحميل",
-      "tileUnavailable": "غير متاح",
       "sectionLocked": "متاح بترخيص المؤسسات",
       "sectionForbidden": "لا يمكن لدورك رؤية هذه البيانات. اطلب من مسؤول المؤسسة منحك الوصول."
     },
@@ -10544,20 +10525,6 @@
       "retry": "إعادة المحاولة"
     },
     "dataAsOf": "البيانات حتى {time}",
-    "status": {
-      "attention": "يتطلب الانتباه",
-      "checking": "جارٍ التحقق…",
-      "partial": "تعذّر تحميل بعض الفحوصات",
-      "clear": "لا شيء يتطلب الانتباه",
-      "items": {
-        "firing": "{count} تنبيه قيد الإطلاق | {count} تنبيه قيد الإطلاق",
-        "failing": "{count} قاعدة فاشلة | {count} قاعدة فاشلة",
-        "incidents": "{count} حادث مفتوح | {count} حادث مفتوح",
-        "pipelines": "{count} مسار معالجة به أخطاء | {count} مسار معالجة به أخطاء",
-        "quiet": "{count} تدفق صامت | {count} تدفق صامت"
-      },
-      "unmonitored": "لا تتم مراقبة أي شيء بعد"
-    },
     "timeRange": {
       "heading": "في النطاق الزمني المحدد"
     }
@@ -10760,6 +10727,7 @@
     "aiExhaustedMessage": "اشترك لمواصلة استخدام الذكاء الاصطناعي. يُفاتر الاستخدام الإضافي على فاتورة هذه المؤسسة.",
     "aiContractExhaustedMessage": "اتصل بمدير حسابك لإضافة المزيد من اعتمادات الذكاء الاصطناعي",
     "aiPayerSubscribeMessage": "تتولى {payer} إدارة الفوترة لهذه المؤسسة. اطلب من أحد مسؤولي {payer} الاشتراك؛ ويُفوتَر الاستخدام الإضافي على فاتورتها.",
+    "aiUsedByFeature": "المساعد وتوليد الاستعلامات: {chat} · تحليل الحوادث: {incident} · إعادة التحليل: {reanalysis}",
     "aiPaygMessage": "تم نفاد الاعتمادات المجانية — الاستخدام سيتم فوترة الاشتراك",
     "billingGroup": {
       "tabLabel": "مجموعة الفوترة",
@@ -30242,6 +30210,15 @@
       "undone": {
         "applyOne": "Undone: {title} is back to how it was.",
         "applyMany": "Undone: {count} change is back to how it was. | Undone: {count} changes are back to how they were."
+      }
+    }
+  },
+  "assistant": {
+    "composer": {
+      "autoNavigation": {
+        "label": "الملاحة التلقائية",
+        "enabledTooltip": "تفعيل التنقل التلقائي - {product} سيقوم بالتنقل تلقائيا بدون تأكيد",
+        "disabledTooltip": "تم تعطيل التنقل التلقائي - {product} سيطلب قبل التنقل"
       }
     }
   }

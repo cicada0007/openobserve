@@ -16,6 +16,7 @@
 import { toRaw } from "vue";
 
 import type { PageContext } from "@/composables/contextProviders/types";
+import type { PaidOverageStatus } from "@/services/paidOverage";
 import type { ChatMessage } from "@/ts/interfaces/chat";
 import { gt, raw, type TranslateFn } from "@/types/i18n";
 import { trackAssistant } from "@/services/assistantAnalytics";
@@ -29,7 +30,7 @@ import {
   suggestionFor,
 } from "./agents";
 import { ERROR_LEDGER, isConsentPrompt } from "./assistantErrors";
-import { renameWindowSid, type AssistantStoreInternal } from "./assistantStore";
+import { renameWindowSid, sessionView, type AssistantStoreInternal } from "./assistantStore";
 import type {
   AgentId,
   ApprovalsService,
@@ -45,6 +46,7 @@ import type {
   RequestTurn,
   Sid,
   TelemetryContainer,
+  TurnConsentRequest,
   TurnEngine,
   TurnInput,
   TurnMeta,
@@ -60,8 +62,8 @@ import {
   type TurnSource,
 } from "./effects";
 import { footerOf, turnAnnotationKey } from "./evidence";
-import type { AssistantFrame } from "./frames";
-import { generateNavigationFromToolResult } from "./navigationRoutes";
+import type { AssistantFrame, NavigationActionFrame } from "./frames";
+import { buildNavigationRoute, generateNavigationFromToolResult } from "./navigationRoutes";
 import { useAssistantName } from "./useAssistantName";
 import {
   answerProgress,
@@ -169,6 +171,8 @@ export interface TurnEngineDeps {
   visibility?: { hidden(): boolean; onVisible(cb: () => void): () => void };
   /** The approvals runtime the reducer's card frames go to. */
   approvals?: () => Pick<ApprovalsService, "onConfirmationRequired" | "onResolved">;
+  /** The chat's Auto Navigation toggle allows a same-tab open; when false the link stays a card to click. */
+  autoNavigation?: (sid: Sid) => boolean;
 }
 
 /** The engine's record of one running turn; lives in `turnRuntime`, never in reactive state. */
@@ -201,6 +205,8 @@ interface TurnRecord {
   restoreUsed: boolean;
   restoring: boolean;
   consentRetried: boolean;
+  /** The 412's paid-usage status, for the consent prompt. */
+  consentStatus?: PaidOverageStatus;
   /** The approval card this turn's prompt answers (Reply, Ask again). */
   replyToApproval?: string;
   /** Regenerate: the stored turn whose answer this attempt versions; the server links them so a reload keeps the versions. */
@@ -216,6 +222,8 @@ interface TurnRecord {
   throughSeq: AssistantFrame[];
   /** Frames applied since the cursor last moved; a tail from the cursor sends their content again. */
   sinceSeq: AssistantFrame[];
+  /** Navigation frames already opened, so a tail resending one never navigates twice. */
+  navigated?: Set<string>;
   cancelConfirmed?: boolean;
   cancelMs: number | null;
   silenceTimer?: ReturnType<typeof setTimeout>;
@@ -250,7 +258,7 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
   const last = new Map<Sid, LastTurn>();
   const t = deps.t ?? gt;
   let builder: RequestBuilder = defaultRequestBuilder(deps, runtime);
-  let consentHandler: ((sid: Sid, err: AssistantError) => void) | null = null;
+  let consentHandler: ((sid: Sid, request: TurnConsentRequest) => void) | null = null;
 
   const record = (sid: Sid) => runtime.get(sid)?.turn;
   const sessionOf = (sid: Sid) => deps.store().state.sessions[sid] as AssistantSession | undefined;
@@ -423,6 +431,7 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
         const fresh = session ? cursorFrame(rec, session.turnMeta, frame, id, tail) : frame;
         watchSilence(rec, true);
         if (!fresh) return;
+        if (fresh.type === "navigation_action") autoNavigate(rec, fresh);
         runner.schedule(rec.sid, frameWork(rec, fresh));
         if (fresh.type === "complete" || fresh.type === "error" || fresh.type === "cancelled") {
           runner.flush(rec.sid);
@@ -465,6 +474,24 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
         dispatch(rec, { type: "eof", hasTail: hasTail(rec) });
       },
     };
+  };
+
+  // Auto Navigation opens the link of a chat on screen; the card is still appended as the record.
+  const autoNavigate = (rec: TurnRecord, frame: NavigationActionFrame) => {
+    const session = sessionOf(rec.sid);
+    const key = JSON.stringify(frame);
+    if (!session || !acceptsFrames(session.turn) || rec.navigated?.has(key)) return;
+    if (!deps.autoNavigation?.(rec.sid) || !sessionView(session, deps.store().state.shell).visible)
+      return;
+    const link = buildNavigationRoute(frame, session.org);
+    if (!link) return;
+    (rec.navigated ??= new Set()).add(key);
+    void deps.store().dispatch(rec.sid, {
+      kind: "navigate",
+      target: link.route,
+      newTab: false,
+      label: raw(link.name ?? ""),
+    });
   };
 
   // The SSE id rule (WP-18): a frame tagged N comes after seq N and several frames share N, so a repeated id is never a reason to drop one.
@@ -673,17 +700,7 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
         code: "consent_still_required" as const,
         ...ERROR_LEDGER.consent_still_required,
       };
-    const session = sessionOf(rec.sid);
-    const consent = (result.body as { consent?: unknown } | null)?.consent;
-    if (session && consent) {
-      session.pendingConsent = {
-        org: rec.org,
-        feature: "ai_credits",
-        status: consent as NonNullable<AssistantSession["pendingConsent"]>["status"],
-        turnId: rec.turnId,
-        snapshot: rec.snapshot,
-      };
-    }
+    rec.consentStatus = (result.body as { consent: PaidOverageStatus }).consent;
     return error;
   };
 
@@ -701,7 +718,8 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
     if (effect.kind === "restore") return void restore(rec);
     if (effect.kind === "reconnect") return void reconnect(rec, effect.attempt);
     if (effect.kind === "not_saved") rec.notSaved = true;
-    if (effect.kind === "consent") consentHandler?.(sid, effect.error);
+    if (effect.kind === "consent" && rec.consentStatus)
+      consentHandler?.(sid, { org: rec.org, status: rec.consentStatus, turnId: rec.turnId });
   };
 
   const noteCapability = (note: "forbidden" | "agent_unavailable" | "admitted") => {
@@ -845,7 +863,6 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
   const resumeConsent = (rec: TurnRecord) => {
     rec.consentRetried = true;
     const session = sessionOf(rec.sid);
-    if (session) session.pendingConsent = null;
     // Nothing was admitted, so a fresh id is safe once the current one has had its one reuse.
     if (rec.idSends >= MAX_ID_SENDS) {
       rec.turnId = deps.uuid();
@@ -878,14 +895,6 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
       if (rec && turn?.state === "awaiting_approval")
         dispatch(rec, { type: "approval_decided", callId: turn.callId, approved: true });
     },
-    consentWithdrawn(sid) {
-      const rec = record(sid);
-      const session = sessionOf(sid);
-      if (!rec || session?.turn.state !== "awaiting_consent") return;
-      session.pendingConsent = null;
-      dispatch(rec, { type: "consent_enable" });
-      dispatch(rec, { type: "stop" });
-    },
     approvalExtended(sid, until) {
       const rec = record(sid);
       const session = sessionOf(sid);
@@ -901,7 +910,6 @@ export function createTurnEngine(deps: TurnEngineDeps): TurnEngine {
       const rec = record(sid);
       const session = sessionOf(sid);
       if (!rec || !session) return;
-      if (session.turn.state === "awaiting_consent") session.pendingConsent = null;
       // A persisted turn the server already took keeps running and saving after the abort, so it is cancelled too.
       if (session.turn.state === "queued" && rec.idSends > 0 && deps.capability().persistence())
         void cancelQuietly(rec, session);
@@ -1025,6 +1033,7 @@ function defaultRequestBuilder(
       },
       context: {
         ...(rec?.pageContext ?? {}),
+        ...session.pinnedContext,
         client,
         user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
@@ -1140,7 +1149,6 @@ function queueTurn(
   );
   session.turn = turn;
   session.turnMeta = freshMeta(rec.turnId, now);
-  session.pendingConsent = null;
   if (rec.source === "regenerate") queueAttempt(session, rec);
   else queuePrompt(session, rec, now);
   rec.stream.messages = session.messages;

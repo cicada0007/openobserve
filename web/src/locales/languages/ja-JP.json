@@ -10398,31 +10398,12 @@
     "hoursAgo": "{count}時間前",
     "daysAgo": "{count}日前",
     "cards": {
-      "firingAlerts": "発火中のアラート",
-      "failingRules": "失敗しているルール",
-      "openIncidents": "未解決のインシデント",
-      "pipelineErrors": "パイプラインエラー",
-      "pipelinesOf": "うち {enabled} 件有効",
-      "quietStreams": "停止中のストリーム",
-      "firingNone": "発火なし",
-      "noAlertRules": "アラートルールなし",
-      "noEnabledRules": "有効なルールなし",
-      "failingNone": "失敗なし",
-      "failingNote": "前回の評価でエラー",
-      "incidentsNone": "未解決なし",
-      "noPipelines": "パイプラインなし",
-      "noStreams": "ストリームなし",
-      "quietNote": "過去 7 日間に書き込みが停止",
-      "criticalUnit": "クリティカルレベルが {count} 件",
-      "deliveryFailures": "アラート配信の失敗",
-      "deliveryNote": "発火したが通知できなかったアラート",
-      "oldestFiring": "最も古い発火から {age}"
+      "openIncidents": "未解決のインシデント"
     },
     "state": {
       "tileForbidden": "アクセス権限なし",
       "tileLocked": "ロック済み",
       "tileError": "読み込めませんでした",
-      "tileUnavailable": "利用できません",
       "sectionLocked": "エンタープライズライセンスで利用可能",
       "sectionForbidden": "お使いのロールではこのデータを表示できません。組織の管理者にアクセス権を依頼してください。"
     },
@@ -10544,20 +10525,6 @@
       "retry": "再試行"
     },
     "dataAsOf": "{time} 時点のデータ",
-    "status": {
-      "attention": "対応が必要",
-      "checking": "確認中…",
-      "partial": "一部のチェックを読み込めませんでした",
-      "clear": "対応が必要な項目はありません",
-      "items": {
-        "firing": "{count} 件のアラートが発火中 | {count} 件のアラートが発火中",
-        "failing": "{count} 件のルールが失敗しています | {count} 件のルールが失敗しています",
-        "incidents": "{count} 件のオープンなインシデント | {count} 件のオープンなインシデント",
-        "pipelines": "{count} 件のエラーのあるパイプライン | {count} 件のエラーのあるパイプライン",
-        "quiet": "{count} 件のデータのないストリーム | {count} 件のデータのないストリーム"
-      },
-      "unmonitored": "まだ何も監視されていません"
-    },
     "timeRange": {
       "heading": "選択した時間範囲内"
     }
@@ -10760,6 +10727,7 @@
     "aiExhaustedMessage": "AI を使い続けるにはサブスクライブしてください。以降の使用量はこの組織の請求書に請求されます。",
     "aiContractExhaustedMessage": "AIクレジットを追加するには、アカウントマネージャーにお問い合わせください",
     "aiPayerSubscribeMessage": "この組織の請求は {payer} が管理しています。サブスクライブするには {payer} の管理者に依頼してください。以降の使用量はその請求書に請求されます。",
+    "aiUsedByFeature": "アシスタントとクエリ生成: {chat} · インシデント分析: {incident} · 再分析: {reanalysis}",
     "aiPaygMessage": "無料クレジットを使い切りました — 使用量はサブスクリプションに請求されます",
     "billingGroup": {
       "tabLabel": "請求グループ",
@@ -30242,6 +30210,15 @@
       "undone": {
         "applyOne": "Undone: {title} is back to how it was.",
         "applyMany": "Undone: {count} change is back to how it was. | Undone: {count} changes are back to how they were."
+      }
+    }
+  },
+  "assistant": {
+    "composer": {
+      "autoNavigation": {
+        "label": "オートナビゲーション",
+        "enabledTooltip": "自動ナビゲーション有効-{product}は確認なしで自動ナビゲートします",
+        "disabledTooltip": "オートナビゲーション無効-{product}はナビゲートする前に確認する"
       }
     }
   }

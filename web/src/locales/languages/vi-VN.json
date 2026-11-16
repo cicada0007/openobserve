@@ -10398,31 +10398,12 @@
     "hoursAgo": "{count} giờ trước",
     "daysAgo": "{count} ngày trước",
     "cards": {
-      "firingAlerts": "Cảnh báo đang kích hoạt",
-      "failingRules": "Quy tắc đang lỗi",
-      "openIncidents": "Sự cố đang mở",
-      "pipelineErrors": "Lỗi pipeline",
-      "pipelinesOf": "trong {enabled} đã bật",
-      "quietStreams": "Stream không hoạt động",
-      "firingNone": "Không có cảnh báo kích hoạt",
-      "noAlertRules": "Không có quy tắc cảnh báo",
-      "noEnabledRules": "Không có quy tắc nào được bật",
-      "failingNone": "Không có quy tắc lỗi",
-      "failingNote": "Lần đánh giá gần nhất bị lỗi",
-      "incidentsNone": "Không có sự cố đang mở",
-      "noPipelines": "Không có pipeline",
-      "noStreams": "Không có stream",
-      "quietNote": "Ngừng ghi dữ liệu trong 7 ngày qua",
-      "criticalUnit": "{count} ở mức nghiêm trọng",
-      "deliveryFailures": "Lỗi gửi cảnh báo",
-      "deliveryNote": "Cảnh báo đã kích hoạt nhưng không thể thông báo",
-      "oldestFiring": "Kích hoạt lâu nhất trong {age}"
+      "openIncidents": "Sự cố đang mở"
     },
     "state": {
       "tileForbidden": "Không có quyền truy cập",
       "tileLocked": "Đã khóa",
       "tileError": "Không thể tải",
-      "tileUnavailable": "Không khả dụng",
       "sectionLocked": "Khả dụng với giấy phép doanh nghiệp",
       "sectionForbidden": "Vai trò của bạn không thể xem dữ liệu này. Hãy yêu cầu quản trị viên tổ chức cấp quyền truy cập."
     },
@@ -10544,20 +10525,6 @@
       "retry": "Thử lại"
     },
     "dataAsOf": "Dữ liệu tính đến {time}",
-    "status": {
-      "attention": "Cần chú ý",
-      "checking": "Đang kiểm tra…",
-      "partial": "Không tải được một số kiểm tra",
-      "clear": "Không có gì cần chú ý",
-      "items": {
-        "firing": "{count} cảnh báo đang kích hoạt | {count} cảnh báo đang kích hoạt",
-        "failing": "{count} quy tắc bị lỗi | {count} quy tắc bị lỗi",
-        "incidents": "{count} sự cố đang mở | {count} sự cố đang mở",
-        "pipelines": "{count} pipeline có lỗi | {count} pipeline có lỗi",
-        "quiet": "{count} stream im lặng | {count} stream im lặng"
-      },
-      "unmonitored": "Chưa có gì được giám sát"
-    },
     "timeRange": {
       "heading": "Trong khoảng thời gian đã chọn"
     }
@@ -10760,6 +10727,7 @@
     "aiExhaustedMessage": "Đăng ký để tiếp tục sử dụng AI. Phần sử dụng thêm sẽ được tính vào hóa đơn của tổ chức này.",
     "aiContractExhaustedMessage": "Liên hệ với quản lý tài khoản của bạn để thêm tín dụng AI",
     "aiPayerSubscribeMessage": "Việc thanh toán cho tổ chức này do {payer} quản lý. Hãy yêu cầu quản trị viên của {payer} đăng ký; phần sử dụng thêm sẽ được tính vào hóa đơn của tổ chức đó.",
+    "aiUsedByFeature": "Trợ lý và tạo truy vấn: {chat} · Phân tích sự cố: {incident} · Phân tích lại: {reanalysis}",
     "aiPaygMessage": "Tín dụng miễn phí đã hết — mức sử dụng được tính vào đăng ký",
     "billingGroup": {
       "tabLabel": "Nhóm thanh toán",
@@ -30242,6 +30210,15 @@
       "undone": {
         "applyOne": "Undone: {title} is back to how it was.",
         "applyMany": "Undone: {count} change is back to how it was. | Undone: {count} changes are back to how they were."
+      }
+    }
+  },
+  "assistant": {
+    "composer": {
+      "autoNavigation": {
+        "label": "Tự động điều hướng",
+        "enabledTooltip": "Đã bật tự động điều hướng - {product} sẽ tự động điều hướng mà không cần xác nhận",
+        "disabledTooltip": "Đã tắt tự động điều hướng - {product} sẽ hỏi trước khi điều hướng"
       }
     }
   }

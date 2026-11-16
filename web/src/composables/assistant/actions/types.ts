@@ -27,6 +27,8 @@ export interface QueryRef {
   to?: number;
   /** A relative window such as `2h`, used when there is no absolute range. */
   period?: string;
+  /** A VRL function the search ran with; Logs opens it in the function editor. */
+  functionContent?: string;
   /** The session's captured org, never tool args (round 2 E-16). */
   org: string;
 }
@@ -65,13 +67,6 @@ export type AssistantAction =
   | { kind: "regenerate"; turnId: string }
   | { kind: "edit_resend"; messageId: string; text: string; chips: ContextChip[] }
   | { kind: "retry_save"; turnId: string }
-  | {
-      kind: "feedback";
-      messageId: string;
-      vote: "up" | "down";
-      reason?: string;
-      comment?: string;
-    }
   | {
       kind: "share";
       op: "create" | "update" | "revoke" | "copy_link" | "download" | "refresh" | "manage";

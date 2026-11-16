@@ -10398,31 +10398,12 @@
     "hoursAgo": "{count}h atrás",
     "daysAgo": "{count}d atrás",
     "cards": {
-      "firingAlerts": "Alertas disparados",
-      "failingRules": "Regras com falhas",
-      "openIncidents": "Incidentes abertos",
-      "pipelineErrors": "Erros de pipeline",
-      "pipelinesOf": "de {enabled} ativos",
-      "quietStreams": "Streams sem atividade",
-      "firingNone": "Nenhum disparado",
-      "noAlertRules": "Sem regras de alerta",
-      "noEnabledRules": "Sem regras ativadas",
-      "failingNone": "Nenhuma com falhas",
-      "failingNote": "A última avaliação deu erro",
-      "incidentsNone": "Nenhum aberto",
-      "noPipelines": "Sem pipelines",
-      "noStreams": "Sem streams",
-      "quietNote": "Deixou de escrever nos últimos 7 dias",
-      "criticalUnit": "{count} em nível crítico",
-      "deliveryFailures": "Falhas de entrega de alertas",
-      "deliveryNote": "Alertas que dispararam mas não conseguiram notificar",
-      "oldestFiring": "Disparado há mais tempo: {age}"
+      "openIncidents": "Incidentes abertos"
     },
     "state": {
       "tileForbidden": "Sem acesso",
       "tileLocked": "Bloqueado",
       "tileError": "Não foi possível carregar",
-      "tileUnavailable": "Não disponível",
       "sectionLocked": "Disponível com uma licença enterprise",
       "sectionForbidden": "A sua função não permite ver estes dados. Peça acesso a um administrador da organização."
     },
@@ -10544,20 +10525,6 @@
       "retry": "Tentar novamente"
     },
     "dataAsOf": "Dados de {time}",
-    "status": {
-      "attention": "Requer atenção",
-      "checking": "A verificar…",
-      "partial": "Não foi possível carregar algumas verificações",
-      "clear": "Nada requer atenção",
-      "items": {
-        "firing": "{count} alerta disparado | {count} alertas disparados",
-        "failing": "{count} regra com falha | {count} regras com falha",
-        "incidents": "{count} incidente em aberto | {count} incidentes em aberto",
-        "pipelines": "{count} pipeline com erros | {count} pipelines com erros",
-        "quiet": "{count} stream sem atividade | {count} streams sem atividade"
-      },
-      "unmonitored": "Ainda não há nada a ser monitorizado"
-    },
     "timeRange": {
       "heading": "No intervalo de tempo selecionado"
     }
@@ -10760,6 +10727,7 @@
     "aiExhaustedMessage": "Subscreva para continuar a usar a IA. A utilização adicional é cobrada na fatura desta organização.",
     "aiContractExhaustedMessage": "Entre em contacto com o seu gestor de conta para adicionar mais créditos de IA",
     "aiPayerSubscribeMessage": "A faturação desta organização é gerida por {payer}. Peça a um administrador de {payer} para subscrever; a utilização adicional é cobrada na fatura dessa organização.",
+    "aiUsedByFeature": "Assistente e geração de consultas: {chat} · Análise de incidentes: {incident} · Reanálise: {reanalysis}",
     "aiPaygMessage": "Créditos gratuitos esgotados — utilização cobrada na subscrição",
     "billingGroup": {
       "tabLabel": "Grupo de faturação",
@@ -30242,6 +30210,15 @@
       "undone": {
         "applyOne": "Undone: {title} is back to how it was.",
         "applyMany": "Undone: {count} change is back to how it was. | Undone: {count} changes are back to how they were."
+      }
+    }
+  },
+  "assistant": {
+    "composer": {
+      "autoNavigation": {
+        "label": "Navegação automática",
+        "enabledTooltip": "Navegação automática ativada - O {product} navegará automaticamente sem confirmação",
+        "disabledTooltip": "Navegação automática desativada - o {product} perguntará antes de navegar"
       }
     }
   }

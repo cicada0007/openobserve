@@ -26,6 +26,7 @@ export {
   useAssistantCredits,
   useCreditNotice,
   type CreditRefusalContext,
+  type CreditThreshold,
 } from "./useAssistantCredits";
 export { openAssistant, type OpenAssistantCall } from "./openAssistant";
 export { useDeepLinkDoor } from "./useDeepLinkDoor";
@@ -210,8 +211,7 @@ export {
   assistantApprovals,
   useAssistantApprovals,
 } from "./useAssistantApprovals";
-export { assistantConsent, consentCardFor, isMeteredCredit, orgDisplayName } from "./consent";
-export type { ConsentCardBinding } from "./consent";
+export { isMeteredCredit, orgDisplayName } from "./consent";
 export {
   assistantKeydownAt,
   noteAssistantKeydown,
@@ -242,12 +242,6 @@ export type {
 } from "./useEditorProposal";
 export type { AssistantHintChannel } from "./hints";
 export type { ApprovalsRuntime } from "./useAssistantApprovals";
-export type {
-  AssistantConsentCardProps,
-  ConsentCardState,
-  ConsentRuntime,
-  ConsentView,
-} from "./consent";
 export type { AssistantIdleFocus } from "./useAssistantIdleFocus";
 export type {
   ApprovalBlockData,

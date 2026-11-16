@@ -98,6 +98,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                 <AssistantSessionTime :sid="sid" :disabled="inertKind !== null || accessLost" />
                 <AssistantAgentPicker :sid="sid" :disabled="inertKind !== null || accessLost" />
               </span>
+              <template v-if="!running">
+                <span
+                  class="bg-badge-default-soft-bg ring-badge-default-ol-border/30 rounded-default flex h-7 shrink-0 items-center px-2 ring-1 ring-inset"
+                >
+                  <OSwitch
+                    v-model="autoNavigation"
+                    size="sm"
+                    data-test="assistant-composer-auto-navigation"
+                  >
+                    <template #label>
+                      <OIcon :name="assistantGlyph.autoNavigation" size="sm" />
+                      <span class="sr-only">{{
+                        t("assistant.composer.autoNavigation.label")
+                      }}</span>
+                    </template>
+                  </OSwitch>
+                </span>
+                <OTooltip
+                  :content="
+                    t(
+                      autoNavigation
+                        ? 'assistant.composer.autoNavigation.enabledTooltip'
+                        : 'assistant.composer.autoNavigation.disabledTooltip',
+                      { product: t('assistant.name') },
+                    )
+                  "
+                />
+              </template>
             </template>
             <AssistantDictationWave v-if="voice.mine.value" :elapsed-ms="voice.elapsedMs.value" />
             <AssistantDictateButton
@@ -166,7 +194,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 </template>
 
 <script lang="ts">
-import type { AssistantHostAdapter, ContextChip, Sid, TurnTerminal } from "@/composables/assistant";
+import type {
+  AssistantHostAdapter,
+  ContextChip,
+  CreditThreshold,
+  Sid,
+  TurnTerminal,
+} from "@/composables/assistant";
+import type { AssistantUsage } from "@/services/assistant";
 import type { I18nText } from "@/types/i18n";
 
 export interface AssistantComposerProps {
@@ -181,11 +216,15 @@ export interface AssistantComposerProps {
   accessLost?: boolean;
   /** The container just opened; the frame plays its one border sweep. */
   opening?: boolean;
+  /** The 70 % / 90 % included-credit notice; the shell decides when it shows. */
+  lowCredits?: { threshold: CreditThreshold; usage: AssistantUsage } | null;
 }
 
 export interface AssistantComposerEmits {
   /** The run-limit notice's link; the shell owns the running-chats list. */
   (e: "show-running"): void;
+  /** The low-credit notice's Plans or Dismiss link. */
+  (e: "low-credits", action: "manage" | "dismiss"): void;
 }
 
 /** A starter prompt over a draft this long asks Replace · Append · Cancel (IW-06 AC 5). */
@@ -202,7 +241,8 @@ const THREAD_WINDOW_MS = 30 * 60_000;
 const REPLY_SELECTOR =
   '[data-test="assistant-approval-reply"], [data-test="assistant-question-other"]';
 
-const CARD_SELECTOR = '[data-test="assistant-approval-card"], [data-test="assistant-consent-card"]';
+const CARD_SELECTOR =
+  '[data-test="assistant-approval-card"], [data-test="o2-ai-paid-usage-consent"]';
 </script>
 
 <script setup lang="ts">
@@ -247,15 +287,19 @@ import {
   nextAgent,
   openTabWithoutOpener,
 } from "@/composables/assistant/pure";
+import { useAutoNavigationPreferences } from "@/composables/useAutoNavigationPreferences";
 import useBreakpoint from "@/composables/useBreakpoint";
 import OButton from "@/lib/core/Button/OButton.vue";
+import OIcon from "@/lib/core/Icon/OIcon.vue";
 import OText from "@/lib/core/Typography/OText.vue";
 import OFile from "@/lib/forms/File/OFile.vue";
+import OSwitch from "@/lib/forms/Switch/OSwitch.vue";
+import OTooltip from "@/lib/overlay/Tooltip/OTooltip.vue";
 import type { FileValue } from "@/lib/forms/File/OFile.types";
 import { trackAssistant } from "@/services/assistantAnalytics";
 import { MAX_IMAGE_SIZE_BYTES } from "@/ts/interfaces/chat";
 import { raw, useI18nTyped } from "@/types/i18n";
-import { formatBytes } from "@/utils/formatters";
+import { formatBytes, formatOrgDay } from "@/utils/formatters";
 import { getUUIDv7 } from "@/utils/uuid";
 
 import AssistantComposerBottomRow, {
@@ -307,6 +351,7 @@ const props = withDefaults(defineProps<AssistantComposerProps>(), {
   cooldownReason: undefined,
   accessLost: false,
   opening: false,
+  lowCredits: null,
 });
 
 const emit = defineEmits<AssistantComposerEmits>();
@@ -363,6 +408,10 @@ const session = computed(() =>
     : null,
 );
 const liveSid = computed(() => session.value?.sid ?? null);
+const { isAutoNavigationEnabled: autoNavigation } = useAutoNavigationPreferences(
+  liveSid,
+  computed(() => store.state.userOrgKey),
+);
 const composer = computed(() => session.value?.composer ?? null);
 const context = useAssistantContext(liveSid, { store });
 const org = computed(() => session.value?.org ?? String(context.page.value?.org_id ?? ""));
@@ -399,7 +448,7 @@ const asking = computed(() => session.value?.pendingApproval?.kind === "question
 const inertKind = computed<"approval" | "asking" | "consent" | null>(() => {
   if (session.value?.pendingApproval && !replying.value)
     return asking.value ? "asking" : "approval";
-  return session.value?.pendingConsent ? "consent" : null;
+  return session.value?.turn.state === "awaiting_consent" ? "consent" : null;
 });
 
 // The mic and the recall sheet follow the pointer, not the width, so a narrow desktop window keeps its keyboard.
@@ -602,7 +651,7 @@ const clearedText = computed<I18nText | null>(() => {
 // Go to request is offered only while the card is out of view, as the card itself is the way back otherwise.
 const cardAway = ref(false);
 watch(
-  [inertKind, root, () => session.value?.pendingApproval?.id, () => session.value?.pendingConsent],
+  [inertKind, root, () => session.value?.pendingApproval?.id, () => session.value?.turn.state],
   ([kind], _, onCleanup) => {
     cardAway.value = false;
     const cards = kind ? Array.from(shellRoot()?.querySelectorAll(CARD_SELECTOR) ?? []) : [];
@@ -739,6 +788,29 @@ const stateNotice = computed<ComposerNotice | null>(() => {
         ? [{ action: "manageUsage", label: t("assistant.composer.strip.managePaid") }]
         : [],
     };
+  const low = props.lowCredits;
+  if (low) {
+    const percent = low.threshold;
+    const line = low.usage.resetsAt
+      ? t("assistant.credits.noticeResets", {
+          percent,
+          date: raw(formatOrgDay(low.usage.resetsAt)),
+        })
+      : t("assistant.credits.notice", { percent });
+    const costs = low.usage.costs;
+    return {
+      id: "creditsLow",
+      tone: "warning",
+      title: line,
+      sentence: costs ? raw(`${line}. ${t("assistant.credits.costs", costs, costs.chat)}`) : line,
+      links: [
+        ...(billingHrefOf(router, org.value)
+          ? [{ action: "manageUsage" as const, label: t("billing.plansLabel") }]
+          : []),
+        { action: "dismissCredits", label: t("common.dismiss") },
+      ],
+    };
+  }
   const offline =
     errorRow.value === t("assistant.composer.offline") || (voice.show.value && voice.offline.value);
   if (offline)
@@ -1445,7 +1517,11 @@ const NOTICE_HANDLERS: Record<NoticeAction, () => void> = {
   turnOn: turnOnVoice,
   showRunning: () => emit("show-running"),
   retry: retryRefused,
-  manageUsage: () => openHref(billingHrefOf(router, org.value)),
+  manageUsage: () => {
+    if (props.lowCredits && !creditsOut.value) emit("low-credits", "manage");
+    openHref(billingHrefOf(router, org.value));
+  },
+  dismissCredits: () => emit("low-credits", "dismiss"),
   undo: () => undoClear(),
   bringDraft: () => undoClear(),
   editQueued,
