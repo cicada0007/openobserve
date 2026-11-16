@@ -856,7 +856,7 @@ describe("IncidentDetailDrawer.vue", () => {
           status: 412,
           data: {
             error_type: "paid_overage_consent_required",
-            message: "AI SRE is not configured for this organization",
+            message: "Investigation is not configured for this organization",
           },
         },
       });
@@ -867,7 +867,7 @@ describe("IncidentDetailDrawer.vue", () => {
       expect(mockPromptForConsent).not.toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledWith({
         variant: "error",
-        message: "AI SRE is not configured for this organization",
+        message: "Investigation is not configured for this organization",
       });
       expect(wrapper.vm.rcaTriggering).toBe(false);
     });

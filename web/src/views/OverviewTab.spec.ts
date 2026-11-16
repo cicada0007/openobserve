@@ -137,6 +137,7 @@ import { streamProbeQuery } from "@/services/stream.queries";
 import { useSampleDataSession } from "@/composables/sampleData/useSampleDataSession";
 import { firstDataStorageKey } from "@/composables/firstEvent/useFirstDataNotice";
 import { b64DecodeUnicode } from "@/utils/zincutils";
+import en from "@/locales/languages/en-US.json";
 
 // OverviewTab renders only O2 `lib` components.
 
@@ -2833,7 +2834,7 @@ describe("OverviewTab", () => {
       });
       expect(payload.context).not.toHaveProperty("level");
       expect(ask("incident-incident-1").attributes("aria-label")).toBe(
-        "Ask AI about Checkout service degraded",
+        `${en.brand.askAutobot} about Checkout service degraded`,
       );
       expect(typeof payload.context.start_time).toBe("number");
       expect(payload.context.end_time).toBeGreaterThan(payload.context.start_time);
@@ -2852,7 +2853,7 @@ describe("OverviewTab", () => {
       await flushPromises();
 
       expect(ask("incident-incident-1").attributes("aria-label")).toBe(
-        "Ask AI about Untitled incident",
+        `${en.brand.askAutobot} about Untitled incident`,
       );
       await ask("incident-incident-1").trigger("click");
       const [payload] = wrapper.emitted("sendToAiChat")![0] as [Record<string, any>];
