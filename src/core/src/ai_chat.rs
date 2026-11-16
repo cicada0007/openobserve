@@ -21,6 +21,8 @@ pub mod fork;
 pub mod projection;
 pub mod rca_ledger;
 pub mod rca_thread;
+pub mod record_v2;
+pub mod turn_error;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -403,7 +405,6 @@ pub async fn pending_confirmations(
         quoted(newest.iter().map(|(_, turn, _)| *turn).collect()),
     );
     let rows = search_rows(org_id, sql, start, end).await?;
-    let now_ms = now_micros() / 1000;
     let mut pending: HashMap<String, (String, HashSet<String>)> = HashMap::new();
     for row in rows {
         let Some((chat, ..)) = newest
@@ -416,20 +417,18 @@ pub async fn pending_confirmations(
             continue;
         }
         // A split event cannot be parsed from one row; it still marks the chat as waiting.
-        let call = match row.to_verified_event() {
-            Ok(event) => {
-                projection::delete_confirmation_call(&event.event_type, &event.data, now_ms)
-            }
-            Err(_) => Some(String::new()),
+        let calls = match row.to_verified_event() {
+            Ok(event) => projection::delete_confirmation_calls(&event.event_type, &event.data),
+            Err(_) => vec![String::new()],
         };
-        if let Some(call) = call {
+        for call in calls {
             // One request is one call id; an unreadable one counts once per event.
             let key = if call.is_empty() {
                 format!("#{}", row.seq)
             } else {
                 call.clone()
             };
-            let entry = pending.entry(row.session_id).or_default();
+            let entry = pending.entry(row.session_id.clone()).or_default();
             entry.0 = call;
             entry.1.insert(key);
         }
@@ -605,12 +604,7 @@ pub fn turn_chunks(events: &[DurableEvent], max_events: usize) -> Vec<&[DurableE
     let mut starts = vec![0usize];
     let mut seen_users = HashSet::new();
     for (i, event) in events.iter().enumerate() {
-        if !event.event_type.starts_with("message.updated") {
-            continue;
-        }
-        let info = &event.data["info"];
-        if info["role"] == "user"
-            && let Some(id) = info["id"].as_str()
+        if let Some(id) = user_message_id(event)
             && seen_users.insert(id.to_string())
             && i > 0
         {
@@ -657,6 +651,25 @@ pub async fn ensure_stream_initialized(org_id: &str, retention_days: i64) {
                 })
         })
         .await;
+}
+
+/// The user message a 1.x `message.updated` or a 2.x `message.updated.2` event records.
+fn user_message_id(event: &DurableEvent) -> Option<&str> {
+    if let Some(message) = record_v2::record_message(event) {
+        return message
+            .get("id")
+            .filter(|_| message.get("type").and_then(|t| t.as_str()) == Some("user"))
+            .and_then(|id| id.as_str());
+    }
+    if record_v2::live_type(&event.event_type) != "message.updated" {
+        return None;
+    }
+    let info = &event.data["info"];
+    if info["role"] == "user" {
+        info["id"].as_str()
+    } else {
+        None
+    }
 }
 
 /// [`read_committed_events`], with the stored rows each event was assembled from.
@@ -1466,6 +1479,31 @@ mod tests {
             vec![vec![0, 1, 2, 3], vec![4, 5, 6], vec![7, 8]]
         );
         assert!(turn_chunks(&[], 10).is_empty());
+    }
+
+    #[test]
+    fn chunks_also_start_at_2x_user_messages() {
+        let v2 = |seq: i64, kind: &str, id: &str| DurableEvent {
+            id: format!("evt_{seq}"),
+            aggregate_id: "ses_A".into(),
+            seq,
+            event_type: record_v2::MESSAGE_UPDATED.into(),
+            data: json::json!({"message": {"id": id, "type": kind}}),
+        };
+        let events = vec![
+            msg(0, "user", "u1"),
+            msg(1, "assistant", "a1"),
+            v2(2, "user", "u2"),
+            v2(3, "assistant", "a2"),
+            v2(4, "idle", "i2"),
+            v2(5, "user", "u3"),
+            v2(6, "user", "u3"),
+        ];
+        let seqs: Vec<Vec<i64>> = turn_chunks(&events, 2)
+            .iter()
+            .map(|c| c.iter().map(|e| e.seq).collect())
+            .collect();
+        assert_eq!(seqs, vec![vec![0, 1], vec![2, 3, 4], vec![5, 6]]);
     }
 
     #[test]

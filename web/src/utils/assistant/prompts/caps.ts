@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// No imports: hosts read the caps statically without loading the assistant runtime on the flag-off path.
+// No imports: hosts read the caps statically without loading the assistant runtime.
 
 /** "Explain these {n} rows" takes at most this many rows. */
 export const MAX_EXPLAIN_ROWS = 20;
@@ -21,7 +21,7 @@ export const MAX_EXPLAIN_ROWS = 20;
 /** And at most this many bytes of selected rows. */
 export const MAX_EXPLAIN_BYTES = 64 * 1024;
 
-/** True when the selection is over the multi-select cap, so the door is disabled with `assistant.entry.tooManyRows`. */
+/** True when the selection is over the multi-select cap. */
 export function rowsOverCap(rows: readonly unknown[]): boolean {
   if (rows.length > MAX_EXPLAIN_ROWS) return true;
   return new TextEncoder().encode(JSON.stringify(rows)).length > MAX_EXPLAIN_BYTES;
