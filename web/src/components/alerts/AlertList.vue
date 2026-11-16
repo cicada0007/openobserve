@@ -118,17 +118,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </OButton>
       </template>
 
-      <StarterPackHealthLine
-        v-if="packsEnabled"
-        :key="store.state.selectedOrganization?.identifier"
-        :org="store.state.selectedOrganization?.identifier"
-      />
-      <StarterPackCoverageLine
-        v-if="packsEnabled"
-        :key="`coverage-${store.state.selectedOrganization?.identifier}`"
-        :org="store.state.selectedOrganization?.identifier"
-        :refresh-key="alertStates"
-      />
       <div data-test="alert-list-splitter" class="flex min-h-0 flex-1 max-md:flex-col">
         <!-- Left: FolderList -->
         <div
@@ -1407,8 +1396,6 @@ import { activates } from "@/lib/core/Button/activation";
 import OStatStrip from "@/lib/data/StatStrip/OStatStrip.vue";
 import IacRegistryLinks from "@/components/common/IacRegistryLinks.vue";
 import AlertSectionTabs from "@/components/alerts/AlertSectionTabs.vue";
-import StarterPackCoverageLine from "@/components/starterPacks/StarterPackCoverageLine.vue";
-import StarterPackHealthLine from "@/components/starterPacks/StarterPackHealthLine.vue";
 import { STARTER_PACKS_ENABLED } from "@/constants/starterPacks";
 import CompositeReferencesDrawer from "@/components/alerts/composite/CompositeReferencesDrawer.vue";
 import ExportResourceDialog from "@/components/common/ExportResourceDialog.vue";
@@ -1469,8 +1456,6 @@ function parseQueryChoice<T extends string>(value: unknown, choices: readonly T[
 export default defineComponent({
   name: "AlertList",
   components: {
-    StarterPackCoverageLine,
-    StarterPackHealthLine,
     MutedChip,
     AckChip,
     AlertMuteUntilDialog,
@@ -2448,10 +2433,6 @@ export default defineComponent({
 
       return baseColumns;
     });
-
-    const alertStates = computed(() =>
-      allAlerts.value.map((alert: any) => `${alert.alert_id}:${alert.enabled}`).join(","),
-    );
 
     const destinations = ref([]);
     const templates = ref([0]);
@@ -4804,7 +4785,6 @@ export default defineComponent({
     ]);
 
     return {
-      packsEnabled: STARTER_PACKS_ENABLED,
       downtimesEnabled,
       muteDialogOpen,
       muteSelection,
@@ -4956,7 +4936,6 @@ export default defineComponent({
       searchQuery,
       clearSearchHistory,
       filteredResults,
-      alertStates,
       triggerExpand,
       formatGroupCount,
       allSelectedAlerts,
