@@ -10808,22 +10808,22 @@
     },
     "capabilities": {
       "query": {
-        "title": "Write a Query",
+        "title": "Write a query",
         "description": "SQL for logs, traces, RUM, or PromQL for metrics.",
         "prompt": "Help me write a query"
       },
       "incident": {
-        "title": "Investigate Incidents",
+        "title": "Investigate incidents",
         "description": "Root-cause across logs, traces, alerts — e.g. \"Why did gateway-5xx fire?\"",
         "prompt": "Help me investigate an incident"
       },
       "dashboard": {
-        "title": "Build a Dashboard",
+        "title": "Build a dashboard",
         "description": "From a topic — e.g. \"K8s node health: CPU, memory, restarts\". Also creates panels.",
         "prompt": "Help me build a dashboard or panel"
       },
       "alert": {
-        "title": "Create an Alert",
+        "title": "Create an alert",
         "description": "Threshold or scheduled alerts, and ingest-time VRL pipelines.",
         "prompt": "Help me create an alert or pipeline"
       }
@@ -11004,7 +11004,7 @@
       "moreTime": "More time",
       "named": "{verb} {name}",
       "nameUnknown": "Couldn't load the name of {entity} {shortId}; you may not have access to it.",
-      "needsOk": "Needs your OK",
+      "needsOk": "Needs you",
       "noDecision": "No answer was recorded for this request",
       "nothingSelected": "Nothing selected",
       "open": "Open",
@@ -11083,7 +11083,7 @@
       "gateNoEditor": "Approvals aren't available on this server.",
       "meta": "Until {time} · {scope}",
       "metaUntil": "Until {time}",
-      "needsOkName": "Needs your OK: {name}",
+      "needsOkName": "Needs you: {name}",
       "notifies": "notifies",
       "retry": "Retry",
       "record": {
@@ -11831,6 +11831,7 @@
       },
       "unknown": {
         "action": "Retry",
+        "status": "The server returned HTTP {status}.",
         "title": "Something went wrong."
       },
       "unreachable": {
@@ -12030,7 +12031,7 @@
         "scope": "Scope",
         "tool": "Tool or operation"
       },
-      "empty": "No standing approvals.",
+      "empty": "No standing approvals",
       "loadFailed": "Standing approvals could not be loaded.",
       "openChat": "Open chat",
       "revoke": "Revoke",
@@ -12152,7 +12153,7 @@
       "filterEmpty": "No chats match these filters",
       "group": {
         "browser": "In this browser",
-        "needsYou": "Needs You",
+        "needsYou": "Needs you",
         "older": "Older",
         "pinned": "Pinned",
         "running": "In Progress",
@@ -12597,7 +12598,7 @@
         "help": "Members can dictate into the composer and edit the text before sending. Nothing is sent until they press Send.",
         "localOnly": "Saved in this browser, for you only. Settings for the whole organization need a newer server version.",
         "off": "Off",
-        "offHelp": "No mic button in the composer.",
+        "offHelp": "Members see no mic button; admins see it crossed out.",
         "readOnly": "Server speech-to-text needs a newer server version.",
         "title": "Voice dictation"
       }
@@ -12984,7 +12985,7 @@
       "deleteTitle": "Delete {name}?",
       "deleted": "{name} deleted",
       "editNamed": "Edit {name}",
-      "empty": "No toolsets yet. Add an MCP server, a CLI tool or a skill @:{'brand.autobot'} can use.",
+      "empty": "Add an MCP server, a CLI tool or a skill @:{'brand.autobot'} can use.",
       "emptyTitle": "No toolsets yet",
       "enableFailed": "{name} could not be updated.",
       "enabledFor": "Enabled, {name}",
@@ -13198,7 +13199,7 @@
       "starter": {
         "otherToolToO2": "Convert a query from another tool to OpenObserve SQL",
         "alerts": {
-          "1": "Which alerts fired most in the last 24 h?",
+          "1": "Which alerts fired most in the past 24 hours?",
           "2": "Draft an alert for errors in `{stream}`",
           "2Generic": "Draft an alert for errors"
         },

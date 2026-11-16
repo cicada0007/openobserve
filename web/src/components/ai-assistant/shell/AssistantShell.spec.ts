@@ -18,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, defineComponent, inject, ref, shallowRef } from "vue";
 
 import type { AssistantCapability, GateCode, Starter } from "@/composables/assistant";
-import { assistantSessionSourceKey } from "@/composables/assistant/pure";
+import { assistantSessionSourceKey, viewedChatSids } from "@/composables/assistant/pure";
 import OSkeleton from "@/lib/feedback/Skeleton/OSkeleton.vue";
 import { toast } from "@/lib/feedback/Toast/useToast";
 import { CREDIT_NOTICE_PREFIX } from "@/composables/assistant/useAssistantCredits";
@@ -257,20 +257,19 @@ describe("AssistantShell states", () => {
     expect(wrapper.find('[data-test="assistant-context-tray"]').exists()).toBe(false);
   });
 
-  it("opens the empty side panel and a window on the logo and the product name, no starters", () => {
+  it("opens the empty side panel and a window on the same starters as the full view", () => {
     for (const placement of ["sidebar", "window"] as const) {
       const { wrapper } = setup({ placement, sid: placement === "window" ? null : undefined });
       expect(root(wrapper).attributes("data-state")).toBe("empty");
-      const empty = wrapper.get('[data-test="assistant-shell-empty"]');
-      expect(empty.findAll("img")).toHaveLength(2);
-      expect(empty.text()).toBe(`${brandNames.askAutobot}`);
-      expect(empty.text()).not.toMatch(/beta/i);
-      expect(wrapper.find('[data-test="assistant-welcome"]').exists()).toBe(false);
+      const welcome = wrapper.get('[data-test="assistant-welcome"]');
+      expect(welcome.attributes("data-variant")).toBe("compact");
+      expect(welcome.find('[data-test="assistant-starter-0"]').exists()).toBe(true);
+      expect(wrapper.find('[data-test="assistant-shell-empty"]').exists()).toBe(false);
       expect(wrapper.find('[data-test="assistant-composer"]').exists()).toBe(true);
       wrapper.unmount();
       document.body.innerHTML = "";
     }
-    expect(starters).not.toHaveBeenCalled();
+    expect(starters).toHaveBeenCalledTimes(2);
   });
 
   it("shows the welcome on the dock's empty chat and stages a starter without sending", async () => {
@@ -1006,6 +1005,36 @@ describe("WP-06 conversation wiring", () => {
     await wrapper.get('[data-test="assistant-turn-outcome-action"]').trigger("click");
     expect(wrapper.find('[data-test="assistant-turn-outcome-open-here"]').exists()).toBe(true);
     open.mockRestore();
+  });
+
+  it("counts its chat as viewed only while the transcript is on screen", async () => {
+    const { wrapper, store } = live({ state: "done" }, MESSAGES);
+    // Earlier shells in this file stay mounted on the same store, so this one shows its own chat.
+    const sid = store.createSession({
+      origin: { entryKind: "header_button", objectKind: "none", container: "window" },
+      detached: true,
+    });
+    store.state.sessions[sid].messages.push(...(MESSAGES as never[]));
+    await wrapper.setProps({ sid });
+    await flushPromises();
+    expect(viewedChatSids().has(sid)).toBe(true);
+    await wrapper.setProps({ sheet: true });
+    store.setSheetSnap("peek");
+    await flushPromises();
+    expect(viewedChatSids().has(sid)).toBe(false);
+    store.setSheetSnap("half");
+    await wrapper.setProps({ covered: true });
+    expect(viewedChatSids().has(sid)).toBe(false);
+    await wrapper.setProps({ covered: false });
+    const vm = wrapper.vm as unknown as { $: { setupState: { chatsOpen: boolean } } };
+    vm.$.setupState.chatsOpen = true;
+    await flushPromises();
+    expect(viewedChatSids().has(sid)).toBe(false);
+    vm.$.setupState.chatsOpen = false;
+    await flushPromises();
+    expect(viewedChatSids().has(sid)).toBe(true);
+    wrapper.unmount();
+    expect(viewedChatSids().has(sid)).toBe(false);
   });
 });
 

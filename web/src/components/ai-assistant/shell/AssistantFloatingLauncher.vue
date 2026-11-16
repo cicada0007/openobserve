@@ -16,6 +16,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 <template>
   <div
+    ref="root"
     class="relative"
     role="presentation"
     data-test="assistant-launcher"
@@ -178,6 +179,8 @@ const STAGGER = [
 // Time the pointer may spend crossing the gap between the icon and the previews.
 const LEAVE_GRACE_MS = 150;
 
+const MAIN_SELECTOR = "main[data-test='main-content']";
+
 /** The first PREVIEW_CHARS characters of a title, with an ellipsis when cut. */
 export function previewTitle(title: string): string {
   const chars = [...title.trim()];
@@ -188,7 +191,7 @@ export function previewTitle(title: string): string {
 </script>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import AssistantStatusDot from "@/components/ai-assistant/common/AssistantStatusDot.vue";
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
@@ -196,6 +199,7 @@ import { useTheme } from "@/composables/useTheme";
 import OBadge from "@/lib/core/Badge/OBadge.vue";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OIcon from "@/lib/core/Icon/OIcon.vue";
+import { publishFloatingObstacle } from "@/lib/core/Table/composables/useFloatingClearance";
 import OTooltip from "@/lib/overlay/Tooltip/OTooltip.vue";
 import { raw, useI18nTyped } from "@/types/i18n";
 import { getImageURL } from "@/utils/zincutils";
@@ -209,6 +213,7 @@ const { isDark } = useTheme();
 const logoSrc = computed(() =>
   getImageURL(isDark.value ? "images/common/o2_ai_logo_dark.svg" : "images/common/o2_ai_logo.svg"),
 );
+const root = ref<HTMLElement | null>(null);
 const toggleButton = ref<{ $el?: HTMLElement } | null>(null);
 const wanted = ref(false);
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -260,7 +265,35 @@ function onDismiss(): void {
   emit("dismiss");
 }
 
-onBeforeUnmount(() => clearTimeout(timer));
+// Scoped to the page so pagers in overlays and drawers, which sit above the launcher, keep their full width.
+let footprint: ResizeObserver | null = null;
+
+function publishFootprint(): void {
+  const main = document.querySelector(MAIN_SELECTOR);
+  const rect = root.value?.getBoundingClientRect();
+  publishFloatingObstacle(main && rect?.width ? { rect, scope: main } : null);
+}
+
+onMounted(() => {
+  publishFootprint();
+  window.addEventListener("resize", publishFootprint);
+  if (typeof ResizeObserver === "undefined") return;
+  // The launcher's end offset follows the page's width a frame later, so a page resize re-reads it then too.
+  footprint = new ResizeObserver(() => {
+    publishFootprint();
+    requestAnimationFrame(publishFootprint);
+  });
+  if (root.value) footprint.observe(root.value);
+  const main = document.querySelector(MAIN_SELECTOR);
+  if (main) footprint.observe(main);
+});
+
+onBeforeUnmount(() => {
+  clearTimeout(timer);
+  footprint?.disconnect();
+  window.removeEventListener("resize", publishFootprint);
+  publishFloatingObstacle(null);
+});
 
 defineExpose({ focus: () => toggleButton.value?.$el?.focus() });
 </script>

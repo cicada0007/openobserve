@@ -46,12 +46,34 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             )
           "
           :class="[
-            'h-5 w-5 shrink-0 [transition:transform_0.6s_ease] group-hover:rotate-180 group-hover:brightness-0 group-hover:invert group-hover:[transition:filter_0.3s_ease]',
+            'h-5 w-5 shrink-0 [transition:transform_0.6s_ease] group-hover:rotate-180 group-hover:brightness-0 group-hover:invert group-hover:[transition:filter_0.3s_ease] forced-colors:hidden',
             view.state === 'off' ? 'opacity-50 grayscale' : '',
           ]"
         />
+        <!-- The image keeps its own fill in forced colours and vanishes on a matching canvas; the mask takes ButtonText -->
         <span
-          v-if="view.badge"
+          aria-hidden="true"
+          data-icon="forced"
+          :class="[
+            'hidden size-5 shrink-0 bg-[ButtonText] forced-color-adjust-none [mask:var(--o-ai-icon)_center/contain_no-repeat] forced-colors:inline-block',
+            view.state === 'off' ? 'opacity-50' : '',
+          ]"
+          :style="{ '--o-ai-icon': `url(${getImageURL('images/common/ai_icon_gradient.svg')})` }"
+        />
+        <!-- Anchored by its start edge so a needs-you count grows away from the icon, not over it -->
+        <span
+          v-if="view.signal"
+          data-test="assistant-header-status-anchor"
+          class="absolute start-4 -top-1 inline-flex"
+        >
+          <AssistantStatusDot
+            :state="view.signal"
+            :count="view.count"
+            data-test="assistant-header-status-light"
+          />
+        </span>
+        <span
+          v-else-if="view.badge"
           aria-hidden="true"
           class="rounded-default bg-surface-base text-text-secondary absolute -end-1.5 -top-1.5 inline-flex size-3.5 items-center justify-center"
         >
@@ -163,18 +185,24 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 </template>
 
 <script lang="ts">
+import type { AssistantSignal } from "@/components/ai-assistant/common/AssistantStatusDot.types";
 import type { AssistantSession, GateReason } from "@/composables/assistant";
 import type { I18nText } from "@/types/i18n";
 
-export type HeaderButtonState = "loading" | "hidden" | "idle" | "open" | "locked" | "off";
+export type HeaderButtonState =
+  "loading" | "hidden" | "idle" | "open" | "working" | "needs_you" | "unread" | "locked" | "off";
 
 /** Hidden turns raise one quiet toast; the header region is the one speaker, so the toast is silent. */
 export const HEADER_TOAST_MS = 6_000;
+
+const AT_REST: ReadonlySet<string> = new Set(["idle", "done", "failed", "refused", "stopped"]);
 
 interface HeaderView {
   state: HeaderButtonState;
   name: I18nText;
   tooltip: I18nText;
+  signal: AssistantSignal | null;
+  count?: number;
   badge: "locked" | "notSetUp" | null;
   /** The pitch or setup card a click opens instead of the container. */
   dialog: GateReason | null;
@@ -183,6 +211,10 @@ interface HeaderView {
 function needsYou(session: AssistantSession): boolean {
   const state = session.turn.state;
   return state === "awaiting_approval" || state === "awaiting_consent" || !!session.pendingApproval;
+}
+
+function isRunning(session: AssistantSession): boolean {
+  return !AT_REST.has(session.turn.state);
 }
 </script>
 
@@ -193,6 +225,7 @@ import { useStore } from "vuex";
 
 import { provideAssistantSurface } from "@/components/ai-assistant/common/assistantSurface";
 import AssistantIconButton from "@/components/ai-assistant/common/AssistantIconButton.vue";
+import AssistantStatusDot from "@/components/ai-assistant/common/AssistantStatusDot.vue";
 import { assistantGlyph } from "@/components/ai-assistant/common/glyphs";
 import AssistantGateState, {
   gateLearnOpen,
@@ -275,17 +308,20 @@ const lockedGate = computed<GateReason>(() =>
   capability.gate.value === "off_for_org" ? "off_for_org" : "no_permission",
 );
 
-// A chat another tab or device lights may be known only by its history row.
-function titleOf(sid: string | null): I18nText {
-  const session = sid ? store.state.sessions[sid] : undefined;
+// A chat another tab or device lights may be known only by its history row; else no title is claimed.
+function knownTitle(sid: string | null): I18nText | null {
+  if (!sid) return null;
+  const session = store.state.sessions[sid];
   if (session) return session.title ?? t("assistant.thread.newChatTitle");
-  return (
-    history.rows.value.find((row) => row.sid === sid)?.title ?? t("assistant.thread.newChatTitle")
-  );
+  return history.rows.value.find((row) => row.sid === sid)?.title ?? null;
+}
+
+function titleOf(sid: string | null): I18nText {
+  return knownTitle(sid) ?? t("assistant.thread.newChatTitle");
 }
 
 function plain(state: HeaderButtonState, name: I18nText, tooltip: I18nText): HeaderView {
-  return { state, name, tooltip, badge: null, dialog: null };
+  return { state, name, tooltip, signal: null, badge: null, dialog: null };
 }
 
 function gateView(): HeaderView | null {
@@ -332,11 +368,76 @@ function gateView(): HeaderView | null {
   return null;
 }
 
-// Chat activity never restyles the button; only the container and the gate do (owner decision).
 function lightView(): HeaderView {
-  if (store.headerLight.value.state === "open" || visible.value) return openView();
+  const light = store.headerLight.value;
+  if (light.state === "needs_you") return needsYouView(light.sid);
+  if (light.state === "working") return workingView(light.sid);
+  if (light.state === "unread") return unreadView(light.sid, light.failed);
+  if (light.state === "open" || visible.value) return openView();
   const name = t("assistant.header.tooltip", { product });
   return plain("idle", name, name);
+}
+
+function needsYouView(sid: string | null): HeaderView {
+  const p = { product };
+  const open = visible.value;
+  const waiting = mine.value.filter(needsYou).length;
+  const session = sid ? store.state.sessions[sid] : undefined;
+  const consent = session?.turn.state === "awaiting_consent";
+  const name =
+    waiting > 0
+      ? t(open ? "assistant.header.needsYouCountNameOpen" : "assistant.header.needsYouCountName", {
+          ...p,
+          count: waiting,
+        })
+      : t(open ? "assistant.header.needsYouNameOpen" : "assistant.header.needsYouName", p);
+  return {
+    ...plain(
+      "needs_you",
+      name,
+      consent ? t("assistant.turn.waitingConsent") : t("assistant.notice.decision"),
+    ),
+    signal: "attention",
+    ...(waiting > 0 && { count: waiting }),
+  };
+}
+
+function workingView(sid: string | null): HeaderView {
+  const running = mine.value.filter(isRunning).length;
+  const name = t(
+    visible.value ? "assistant.header.answeringNameOpen" : "assistant.header.answeringName",
+    { product },
+  );
+  const title = knownTitle(sid);
+  const tooltip =
+    running > 1
+      ? t("assistant.header.stateRunningCount", { count: running }, running)
+      : title
+        ? t("assistant.header.stateWorking", { title })
+        : name;
+  return { ...plain("working", name, tooltip), signal: "working" };
+}
+
+function unreadView(sid: string | null, failed: boolean): HeaderView {
+  const p = { product };
+  const title = { title: titleOf(sid) };
+  return failed
+    ? {
+        ...plain(
+          "unread",
+          t("assistant.header.failedName", p),
+          t("assistant.header.stateFailed", title),
+        ),
+        signal: "failed",
+      }
+    : {
+        ...plain(
+          "unread",
+          t("assistant.header.readyName", p),
+          t("assistant.header.stateDone", title),
+        ),
+        signal: "unread",
+      };
 }
 
 // The label names what a click does: close the sidebar, or bring windows-only users to a sidebar chat.

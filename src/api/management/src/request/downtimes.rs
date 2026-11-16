@@ -15,13 +15,13 @@
 
 //! Downtime handlers: enterprise-only (D1), 403 in the OSS build and while the flag is off.
 
+#[cfg(feature = "enterprise")]
+use axum::extract::Query;
 use axum::{
     Json,
     extract::{Path, rejection::JsonRejection},
     response::Response,
 };
-#[cfg(feature = "enterprise")]
-use axum::extract::Query;
 use config::meta::downtimes::{
     CancelDowntimeQuery, CreateDowntimeResponse, Downtime, DowntimeDetail, DowntimeRequest,
     DowntimeTestRequest, DowntimeTestResult, ExtendDowntimeRequest, ExtendDowntimeResponse,

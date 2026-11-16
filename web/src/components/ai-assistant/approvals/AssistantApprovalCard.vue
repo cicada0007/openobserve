@@ -30,7 +30,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       :aria-label="groupName"
       :aria-describedby="metaLine ? metaId : undefined"
       :aria-busy="sending ? 'true' : undefined"
-      class="border-status-warning-text flex min-w-0 flex-col gap-1.5 border-s-2 py-0.5 ps-2.5"
+      class="border-assistant-signal-attention flex min-w-0 flex-col gap-1.5 border-s-2 py-0.5 ps-2.5"
       :data-kind="card.kind"
       data-test="assistant-approval-card"
     >
@@ -38,7 +38,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       <div class="flex min-w-0 items-center gap-2" data-test="assistant-approval-strip">
         <span
           aria-hidden="true"
-          class="text-status-warning-text min-w-0 flex-1 text-xs font-medium"
+          class="text-assistant-signal-attention min-w-0 flex-1 text-xs font-medium"
           data-test="assistant-approval-strip-label"
         >
           {{
@@ -49,19 +49,27 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           v-if="remainingMs !== null"
           role="timer"
           aria-live="off"
-          :aria-label="t('assistant.approval.expiresIn', { time: clockText })"
+          :aria-label="
+            t(expiringSoon ? 'assistant.approval.expiringSoon' : 'assistant.approval.expiresIn', {
+              time: clockText,
+            })
+          "
           :class="[
-            'shrink-0 text-xs whitespace-nowrap tabular-nums',
-            expiringSoon ? 'font-medium' : 'text-status-warning-text',
+            'text-assistant-signal-attention inline-flex shrink-0 items-center gap-0.5 text-xs whitespace-nowrap tabular-nums',
+            expiringSoon && 'font-medium',
           ]"
           :data-expiring="expiringSoon ? '' : undefined"
           data-test="assistant-approval-countdown"
         >
-          <OBadge v-if="expiringSoon" variant="warning" size="xs" shape="rounded">{{
-            clockText
-          }}</OBadge>
-          <template v-else>{{ clockText }}</template>
-        </span>
+          <!-- A shape, so the last minute never relies on colour and weight alone -->
+          <OIcon
+            v-if="expiringSoon"
+            :name="assistantGlyph.warning"
+            size="xs"
+            aria-hidden="true"
+            data-test="assistant-approval-expiring-icon"
+          />{{ clockText }}</span
+        >
       </div>
       <h3
         ref="headingEl"
@@ -179,8 +187,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         class="text-text-heading flex min-w-0 flex-wrap items-center gap-2"
         data-test="assistant-approval-footer"
       >
-        <!-- The rest sits in ⋯ at the start, opening upward, so it never covers Deny or Approve -->
-        <ODropdown v-if="menuItems.length" side="top" align="start">
+        <span class="flex-1" />
+        <!-- The menu opens upward so it never covers Deny or Approve -->
+        <ODropdown v-if="menuItems.length" side="top" align="end">
           <template #trigger>
             <OButton
               variant="ghost"
@@ -205,7 +214,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             {{ item.label }}
           </ODropdownItem>
         </ODropdown>
-        <span class="flex-1" />
         <OButton
           v-if="!replying"
           ref="denyButton"
@@ -238,7 +246,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </OButton>
         <OButton
           v-else-if="!replying && !gated"
-          variant="primary"
+          :variant="card.destructive ? 'destructive' : 'primary'"
           size="xs"
           :disabled="sending || nothingSelected"
           :loading="sending && pressed === 'approve'"
@@ -347,7 +355,6 @@ import {
   pushFromThread,
   type QuestionOption,
 } from "@/composables/assistant/pure";
-import OBadge from "@/lib/core/Badge/OBadge.vue";
 import OButton from "@/lib/core/Button/OButton.vue";
 import OCodeBlock from "@/lib/core/Code/OCodeBlock.vue";
 import OCollapsible from "@/lib/core/Collapsible/OCollapsible.vue";

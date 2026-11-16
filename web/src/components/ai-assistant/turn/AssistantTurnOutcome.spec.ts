@@ -258,6 +258,31 @@ describe("AssistantTurnOutcome", () => {
     ).toBe(false);
   });
 
+  it("says the server's cause under an unknown 4xx, else its HTTP status", () => {
+    const withCause = toAssistantError({
+      status: 404,
+      body: { code: 404, message: "stream app_logs not found\nat search.rs:12" },
+    });
+    expect(withCause.code).toBe("unknown");
+    expect(bodies(mountOutcome({ error: withCause }))).toEqual(["stream app_logs not found"]);
+    const internal = toAssistantError({
+      status: 500,
+      body: { code: 500, message: "panicked at src/handler.rs:88\nbacktrace" },
+    });
+    expect(bodies(mountOutcome({ error: internal }))).toEqual(["The server returned HTTP 500."]);
+    const bare = toAssistantError({
+      status: 500,
+      body: { code: 500, message: "Internal Server Error" },
+    });
+    const fallback = mountOutcome({ error: bare });
+    expect(title(fallback)).toBe("Something went wrong.");
+    expect(bodies(fallback)).toEqual(["The server returned HTTP 500."]);
+    expect(bodies(mountOutcome({ error: error("unknown") }))).toEqual([]);
+    expect(
+      bodies(mountOutcome({ error: error("provider_error", { serverMessage: "raw" }) })),
+    ).not.toContain("raw");
+  });
+
   it("draws a failure and a refusal as one tinted callout: tone title, the sentence, one action", () => {
     const failed = mountOutcome({ kind: "failed", error: error("unknown") });
     expect(failed.attributes("role")).toBeUndefined();

@@ -125,6 +125,11 @@ export interface RunsDeps {
   stopElsewhere(sid: Sid): Promise<void>;
   approvalElsewhere(sid: Sid): boolean;
   cachedLapsedAt(sid: Sid): number | null | undefined;
+  /** The chats a mounted container has on screen with its transcript showing. */
+  viewed(): ReadonlySet<Sid>;
+  pageVisible(): boolean;
+  /** After the server recorded a seen chat, so cached list reads agree with it. */
+  onSeen(org: string, sid: Sid): void;
 }
 
 export interface AssistantRuns {
@@ -231,6 +236,15 @@ export function shownSids(state: Pick<AssistantState, "shell">): Sid[] {
   return [...active, ...openWindowsOf(shell).map((w) => w.sid)];
 }
 
+/** The chats the user can read now: a container shows each, its transcript is on screen and the page visible. */
+export function viewedSids(
+  state: Pick<AssistantState, "shell">,
+  viewed: ReadonlySet<Sid>,
+  pageVisible: boolean,
+): Sid[] {
+  return pageVisible ? shownSids(state).filter((sid) => viewed.has(sid)) : [];
+}
+
 /** The display name of a wire agent id; `sre-rca` runs show as Investigator (D2 §4). */
 export function runAgentKey(agent: string | null): "general" | "investigator" | "queryBuilder" {
   if (agent === "sre" || agent === "sre-rca") return "investigator";
@@ -320,13 +334,52 @@ export function createRuns(deps: RunsDeps): AssistantRuns {
     }
   };
 
+  const viewedNow = () => viewedSids(state(), deps.viewed(), deps.pageVisible());
+
   // Seen means opened in any container (D2 §5.5), so a finished row the user is looking at leaves by itself.
   const stopSeen = watch(
     () =>
       listed.value
-        .filter((row) => finished(row) && shownSids(state()).includes(row.sid))
+        .filter((row) => finished(row) && viewedNow().includes(row.sid))
         .map((row) => row.sid),
     clearAll,
+  );
+
+  // One mark per finished turn: the server can answer 200 without recording it, and polls must not resend.
+  const marked = new Map<Sid, number>();
+  const turnOf = (chat: ChatSummaryWire) => chat.last_turn_ended_at ?? chat.updated_at;
+  const withMarks = (list: ChatSummaryWire[]) =>
+    list.map((chat) =>
+      chat.seen === false && marked.get(chat.session_id) === turnOf(chat)
+        ? { ...chat, seen: true }
+        : chat,
+    );
+  const markSeen = async (chat: ChatSummaryWire) => {
+    const org = deps.org();
+    if (!org) return;
+    marked.set(chat.session_id, turnOf(chat));
+    chats.value = withMarks(chats.value);
+    try {
+      await assistantService.markChatSeen(org, chat.session_id);
+      deps.onSeen(org, chat.session_id);
+    } catch {
+      // A failed mark waits for the chat's next turn rather than retrying on every poll.
+    }
+  };
+  // Reloads and other devices read only the server's marker, so a chat read here must set it.
+  const stopServerSeen = watch(
+    () => {
+      const viewed = viewedNow();
+      return chats.value.filter(
+        (chat) =>
+          chat.seen === false &&
+          !chat.active_turn &&
+          !chat.pending_approval &&
+          marked.get(chat.session_id) !== turnOf(chat) &&
+          viewed.includes(chat.session_id),
+      );
+    },
+    (list) => list.forEach((chat) => void markSeen(chat)),
   );
 
   // A 429 names the real cap, which an admin may have changed from the default.
@@ -353,6 +406,7 @@ export function createRuns(deps: RunsDeps): AssistantRuns {
     (value) => {
       cleared.value = readRunsCleared(value);
       chats.value = [];
+      marked.clear();
     },
     { immediate: true },
   );
@@ -363,7 +417,7 @@ export function createRuns(deps: RunsDeps): AssistantRuns {
     (org) => {
       stopActive?.();
       stopActive = null;
-      if (org) stopActive = deps.watchActive(org, (next) => (chats.value = next));
+      if (org) stopActive = deps.watchActive(org, (next) => (chats.value = withMarks(next)));
     },
     { immediate: true },
   );
@@ -443,7 +497,16 @@ export function createRuns(deps: RunsDeps): AssistantRuns {
     dispose() {
       if (timer) clearInterval(timer);
       stopActive?.();
-      for (const stop of [stopSeen, stopLimit, stopKey, stopFollow, stopTick, stopCleared]) stop();
+      for (const stop of [
+        stopSeen,
+        stopServerSeen,
+        stopLimit,
+        stopKey,
+        stopFollow,
+        stopTick,
+        stopCleared,
+      ])
+        stop();
     },
   };
 }
