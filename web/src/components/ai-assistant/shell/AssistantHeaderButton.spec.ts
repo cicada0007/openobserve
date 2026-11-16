@@ -244,6 +244,7 @@ describe("AssistantHeaderButton light", () => {
     expect(el.attributes("aria-expanded")).toBeUndefined();
     expect(el.attributes("aria-pressed")).toBeUndefined();
     expect(el.attributes("data-entry")).toBe("ai-entry-header-ask");
+    expect(wrapper.find('[data-test="assistant-header-status-light"]').exists()).toBe(false);
     await el.trigger("click");
     expect(openAssistant).toHaveBeenCalledWith(
       expect.objectContaining({ entryKind: "header_button", entryVerb: "ask", intent: "open" }),
@@ -348,36 +349,115 @@ describe("AssistantHeaderButton light", () => {
     expect(openAssistant).not.toHaveBeenCalled();
   });
 
-  it.each<[string, (store: any, sid: string) => void]>([
-    [
-      "needs you",
-      (store, sid) =>
-        (store.state.sessions[sid].turn = { state: "awaiting_approval", callId: "c1" }),
-    ],
-    [
-      "answering",
-      (store, sid) => (store.state.sessions[sid].turn = { state: "responding.writing" }),
-    ],
-    [
-      "unread",
-      (store, sid) => {
-        store.state.sessions[sid].turn = { state: "done", saved: "local" };
-        store.state.sessions[sid].unread = true;
-      },
-    ],
-  ])("looks and reads like idle while a chat is %s", async (_n, light) => {
+  it("shows working with the title, and a count for more than one", async () => {
     const { wrapper, store } = setup();
-    const sid = session(store, "Hidden");
+    const a = session(store, "Checkout 5xx");
+    store.state.sessions[a].turn = { state: "responding.writing" };
+    await flushPromises();
+    expect(button(wrapper).attributes("data-state")).toBe("working");
+    expect(button(wrapper).attributes("aria-label")).toBe("O2 Assistant, answering");
+    expect(tooltip(wrapper)).toBe("Answering: Checkout 5xx");
+    expect(
+      wrapper.find('[data-test="assistant-header-status-light"]').attributes("data-shape"),
+    ).toBe("ring");
     store.setActive(null);
+    const b = session(store, "Payments");
+    store.state.sessions[b].turn = { state: "queued" };
     await flushPromises();
-    const idle = button(wrapper).classes();
-    light(store, sid);
+    expect(tooltip(wrapper)).toBe("2 answers running");
+  });
+
+  it("names another tab's answer by its history row, else claims no title", async () => {
+    const remote = { state: "working" as const, sid: "0190ffff-c3d4-7e5f-8a9b-000000000001" };
+    const unknown = setup("available", {}, remote);
     await flushPromises();
-    const el = button(wrapper);
-    expect(el.attributes("aria-label")).toBe("O2 Assistant");
-    expect(tooltip(wrapper)).toBe("O2 Assistant");
-    expect(el.attributes("data-state")).toBe("idle");
-    expect(el.classes()).toEqual(idle);
+    expect(button(unknown.wrapper).attributes("data-state")).toBe("working");
+    expect(tooltip(unknown.wrapper)).toBe("O2 Assistant, answering");
+    unknown.wrapper.unmount();
+    const known = setup("available", { persistence: false }, remote);
+    known.store.setIdentity({ userOrgKey: "k1", org: "default" });
+    fake.current.db.rows.set(1, {
+      id: 1,
+      timestamp: new Date().toISOString(),
+      title: "Remote chat",
+      messages: [{ role: "user", content: raw("q") }],
+      sessionId: remote.sid,
+      userOrgKey: "k1",
+    });
+    fake.current.history.ensureLoaded();
+    await flushPromises();
+    expect(tooltip(known.wrapper)).toBe("Answering: Remote chat");
+  });
+
+  it("shows no count badge for another tab's waiting chat", async () => {
+    const { wrapper } = setup("available", {}, { state: "needs_you", sid: "elsewhere" });
+    await flushPromises();
+    expect(button(wrapper).attributes("data-state")).toBe("needs_you");
+    expect(wrapper.find('[data-test="assistant-header-status-light"]').text()).toBe("");
+  });
+
+  it("ranks needs you above working and shows the count", async () => {
+    const { wrapper, store } = setup();
+    const a = session(store, "Running");
+    store.state.sessions[a].turn = { state: "queued" };
+    store.setActive(null);
+    const b = session(store, "Delete alerts");
+    store.state.sessions[b].turn = { state: "awaiting_approval", callId: "c1" };
+    await flushPromises();
+    expect(button(wrapper).attributes("data-state")).toBe("needs_you");
+    expect(button(wrapper).attributes("aria-label")).toBe("O2 Assistant, needs you, 1 waiting");
+    expect(tooltip(wrapper)).toBe("Needs you");
+    expect(wrapper.find('[data-test="assistant-header-status-light"]').text()).toBe("1");
+    expect(
+      wrapper.find('[data-test="assistant-header-status-light"]').attributes("data-shape"),
+    ).toBe("dot-count");
+    const anchor = wrapper.get('[data-test="assistant-header-status-anchor"]').classes();
+    expect(anchor).toContain("start-4");
+    expect(anchor.some((c) => c.startsWith("-end-") || c.startsWith("end-"))).toBe(false);
+  });
+
+  it("names the visible needs-you count so the label matches the content", async () => {
+    const { wrapper, store } = setup();
+    for (const title of ["Delete alerts", "Mute monitors"]) {
+      const sid = session(store, title);
+      store.state.sessions[sid].turn = { state: "awaiting_approval", callId: title };
+    }
+    await flushPromises();
+    const count = wrapper.get('[data-test="assistant-header-status-light"]').text();
+    expect(count).toBe("2");
+    expect(button(wrapper).attributes("aria-label")).toBe(
+      `O2 Assistant, needs you, ${count} waiting`,
+    );
+  });
+
+  it("uses the one consent key when the decision is about paid usage", async () => {
+    const { wrapper, store } = setup();
+    const a = session(store, "Costly");
+    store.state.sessions[a].turn = { state: "awaiting_consent" };
+    await flushPromises();
+    expect(tooltip(wrapper)).toBe("Waiting for your decision on paid usage");
+  });
+
+  it("shows an unread answer, ready or failed, until a container shows it", async () => {
+    const { wrapper, store } = setup();
+    const a = session(store, "Latency");
+    store.state.sessions[a].turn = { state: "done", saved: "local" };
+    store.state.sessions[a].unread = true;
+    await flushPromises();
+    expect(button(wrapper).attributes("aria-label")).toBe("O2 Assistant, answer ready");
+    expect(tooltip(wrapper)).toBe("Answer ready: Latency");
+    expect(
+      wrapper.find('[data-test="assistant-header-status-light"]').attributes("data-shape"),
+    ).toBe("dot");
+    store.state.sessions[a].turn = {
+      state: "failed",
+      error: { code: "unknown", phase: "post_admission", retryable: true, action: "retry" },
+    };
+    await flushPromises();
+    expect(button(wrapper).attributes("aria-label")).toBe("O2 Assistant, last answer failed");
+    expect(
+      wrapper.find('[data-test="assistant-header-status-light"]').attributes("data-shape"),
+    ).toBe("glyph");
   });
 
   it("opens the container on the lit session", async () => {
