@@ -503,39 +503,26 @@ pub async fn merge_cases(
             cases::MAX_VERDICT_REASON_CHARS
         ));
     }
-    let (mut severity, muted) = match security_case(&org_id, &target_id).await {
+    let muted = match security_case(&org_id, &target_id).await {
         Ok(case) if case.status == "resolved" => {
             return MetaHttpResponse::bad_request("Reopen the target case before merging into it");
         }
-        Ok(case) => (
-            case.severity.parse::<IncidentSeverity>().ok(),
-            case.muted_by_downtime_id.is_some(),
-        ),
+        Ok(case) => case.muted_by_downtime_id.is_some(),
         Err(resp) => return resp,
     };
-    let before = severity;
     let mut cases_in = Vec::with_capacity(sources.len());
     for id in &sources {
         match security_case(&org_id, id).await {
-            Ok(case) => {
-                severity = cases::most_severe(severity, case.severity.parse().ok());
-                cases_in.push(case);
-            }
+            Ok(case) => cases_in.push(case),
             Err(resp) => return resp,
         }
     }
-    let target_severity = severity.map(|s| s.to_string());
     audit::mark();
-    // Firings, closes and the severity raise commit together; the timeline and acks follow.
-    let closed = match infra::table::alert_incidents::merge_cases(
-        &org_id,
-        &target_id,
-        &sources,
-        target_severity.as_deref(),
-    )
-    .await
-    {
-        Ok(closed) => closed,
+    // The raise is decided from the locked rows and commits with its event; the timeline follows.
+    let by = Some(user_id.as_str());
+    let merged = infra::table::alert_incidents::merge_cases(&org_id, &target_id, &sources, by);
+    let (closed, raised) = match merged.await {
+        Ok(merged) => merged,
         Err(e) => return MetaHttpResponse::internal_error(e),
     };
     let why = if reason.is_empty() {
@@ -557,9 +544,9 @@ pub async fn merge_cases(
             log::error!("[SECURITY] could not finish closing merged case {org_id}/{id}: {e}");
         }
     }
-    if let (Some(from), Some(to)) = (before, severity) {
-        openobserve_core::alerts::incidents::announce_severity_change(
-            &org_id, &target_id, from, to, &user_id, muted,
+    if let Some(event) = raised {
+        openobserve_core::alerts::incidents::notify_severity_change(
+            &org_id, &target_id, event, muted,
         )
         .await;
     }
