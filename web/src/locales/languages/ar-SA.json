@@ -2088,7 +2088,6 @@
     "ancestorHint": "المستدعي للإطار المكبّر. انقر للتصغير إليه.",
     "copyFunctionName": "نسخ اسم الدالة",
     "focusBlock": "تركيز الكتلة",
-    "searchForFunction": "البحث عن هذه الدالة",
     "showInFlameGraph": "عرض في مخطط اللهب",
     "focusInFlameGraph": "التركيز في مخطط اللهب",
     "functionActions": "إجراءات لـ {name}",
