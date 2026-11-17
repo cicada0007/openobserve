@@ -1593,7 +1593,7 @@ import { incidentRefusalToast, incidentStatusToast } from "@/utils/alerts/ackSta
 import { useMutation, useQuery } from "@tanstack/vue-query";
 import { firingAlertsQuery } from "@/services/alerts.queries";
 import { useNowMicros } from "@/composables/downtimes/useNowMicros";
-import { FIRING_CLOCK_MS } from "@/composables/alerts/useFiringAlerts";
+import { FIRING_CLOCK_MS } from "@/utils/alerts/firingAlerts";
 import {
   incidentFiringCounts,
   incidentLiveSummary,

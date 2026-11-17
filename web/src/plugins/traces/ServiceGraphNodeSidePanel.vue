@@ -116,7 +116,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         data-test="svcver-panel-identity"
       >
         <OTruncatedText
-          v-if="identityNotReported"
+          v-if="identityNotReported || identityAbsent"
           class="text-text-secondary min-w-0 text-xs"
           data-test="svcver-panel-identity-not-reported"
           >{{ t("serviceVersions.panel.identityNotReported") }}</OTruncatedText
@@ -862,6 +862,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 <script lang="ts">
 import { useLoadedOrg } from "@/utils/assistant/doorBinding";
 import {
+  isOutsideK8s,
   versionImageLabel,
   versionPlaces,
   whereSentence,
@@ -910,6 +911,7 @@ import {
   buildChipDimensionsFromFilters,
 } from "@/services/service_streams";
 import { ENV_SEGMENTS, groupEnvKey } from "@/utils/serviceStreamEnvs";
+import { serviceNamesSql } from "@/utils/serviceCount";
 import {
   escapeSingleQuotes,
   deepCopy,
@@ -1426,9 +1428,10 @@ export default defineComponent({
         (versionsTabScope.value.service === name ? versionsTabScope.value.where : "")
       );
     });
+    // A row with no version text records unstamped spans, not a version.
     const scopedVersions = computed(() =>
       (panelVersions.data.value?.versions || []).filter(
-        (row) => row.where_key === versionsWhere.value,
+        (row) => row.version && row.where_key === versionsWhere.value,
       ),
     );
     // Before the tab picks, the count takes the place it will open on, so the badge does not wait for the tab.
@@ -1440,10 +1443,10 @@ export default defineComponent({
     const versionCount = computed(
       () =>
         (panelVersions.data.value?.versions || []).filter(
-          (row) => row.where_key === countWhere.value,
+          (row) => row.version && row.where_key === countWhere.value,
         ).length,
     );
-    const headerIdentity = computed(
+    const versionedIdentity = computed(
       () =>
         [...scopedVersions.value]
           .filter((row) => row.version && !row.restricted)
@@ -1453,15 +1456,28 @@ export default defineComponent({
               (b.deploys?.[0]?.at || b.first_seen) - (a.deploys?.[0]?.at || a.first_seen),
           )[0],
     );
+    // Unversioned spans can still name an env or place, so the header shows those; only spans with neither say none is reported.
+    const unversionedIdentity = computed(() =>
+      (panelVersions.data.value?.versions || []).find(
+        (row) =>
+          !row.version &&
+          !row.restricted &&
+          row.where_key === countWhere.value &&
+          ((Boolean(row.env) && !row.no_env) || !isOutsideK8s(row.where_key, row.where)),
+      ),
+    );
+    const headerIdentity = computed(
+      () => versionedIdentity.value ?? (versionCount.value ? undefined : unversionedIdentity.value),
+    );
     const headerVersion = computed(() =>
-      headerIdentity.value
+      versionedIdentity.value
         ? versionImageLabel(
-            headerIdentity.value.version,
-            headerIdentity.value.image,
-            headerIdentity.value.version_images,
+            versionedIdentity.value.version,
+            versionedIdentity.value.image,
+            versionedIdentity.value.version_images,
             t,
           )
-        : "",
+        : t("serviceVersions.catalog.noVersion"),
     );
 
     // A place the user picked in Versions scopes the whole panel, so the header shows it with a way back.
@@ -1477,6 +1493,14 @@ export default defineComponent({
         !pickedPlace.value &&
         Object.prototype.hasOwnProperty.call(props.selectedNode ?? {}, "where_key") &&
         !props.selectedNode?.where_key,
+    );
+    // A place whose spans carry no version once loaded says so, as the badge-less Versions tab does.
+    const identityAbsent = computed(
+      () =>
+        !pickedPlace.value &&
+        panelVersions.isSuccess.value &&
+        versionCount.value === 0 &&
+        !unversionedIdentity.value,
     );
     const clearPickedPlace = () =>
       versionPanel.update(props.selectedNode?.where_key || "", activeTab.value);
@@ -1568,6 +1592,12 @@ export default defineComponent({
       if (!props.selectedNode) return "";
       const name = props.selectedNode.name || props.selectedNode.label || props.selectedNode.id;
       return escapeSingleQuotes(name);
+    };
+    // A catalog row folds a service's spellings, so its span reads match each one the row carries.
+    const spanServiceNames = (): string[] => {
+      const node = props.selectedNode;
+      const spellings = node?.service_type ? undefined : node?.service_names;
+      return spellings?.length ? spellings : [node?.name || node?.label || node?.id || ""];
     };
 
     // Shared cache of stream schema field names — populated by resolveStreamSchema,
@@ -1709,8 +1739,7 @@ export default defineComponent({
     );
 
     const serviceFilter = (alias = ""): string => {
-      const serviceName = buildServiceName();
-      let filter = `${identityField(alias)} = '${serviceName}'`;
+      let filter = serviceNamesSql(identityField(alias), spanServiceNames());
       if (panelWhereKey.value)
         filter += ` AND ${alias}o2_service_where = '${escapeSingleQuotes(panelWhereKey.value)}'`;
       if (!hasCatalogServiceIdentity.value) return filter;
@@ -2162,12 +2191,7 @@ export default defineComponent({
     );
 
     // Recent Operations State
-    const operationsViewMode = ref<"aggregated" | "spans">("aggregated");
     const recentOperations = ref<any[]>([]);
-    const recentSpanData = ref<{ errorSpans: any[]; slowSpans: any[] }>({
-      errorSpans: [],
-      slowSpans: [],
-    });
     const loadingOperations = ref(false);
 
     // Dynamic resource tabs state
@@ -2517,16 +2541,6 @@ export default defineComponent({
     const formatOperationLatency = (microseconds: number): string =>
       microseconds ? formatTimeWithSuffix(microseconds) : "—";
 
-    // Helper: Format Span Timestamp (from nanoseconds)
-    const formatSpanTimestamp = (nanoseconds: number): string => {
-      const date = new Date(nanoseconds / 1000000);
-      return date.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-    };
-
     // ── Sorting state ──────────────────────────────────────────────────────
     const sortBy = ref<string>("");
     const sortOrder = ref<"asc" | "desc" | "">("");
@@ -2735,67 +2749,6 @@ export default defineComponent({
       }
     };
 
-    // Fetch recent spans (error spans + slowest spans)
-    const fetchRecentSpans = async () => {
-      if (!props.selectedNode || !props.visible || props.streamFilter === "all") return;
-
-      loadingOperations.value = true;
-      recentSpanData.value = { errorSpans: [], slowSpans: [] };
-      const scope = serviceFilter();
-
-      try {
-        const streamName = props.streamFilter || "default";
-        const range = {
-          org: store.state.selectedOrganization.identifier,
-          startTime: props.timeRange.startTime,
-          endTime: props.timeRange.endTime,
-        };
-
-        const [errorHits, slowHits] = await Promise.all([
-          streamTraceRows<any>({
-            ...range,
-            sql: `SELECT operation_name, duration, start_time FROM "${streamName}" WHERE ${serviceFilter()} AND span_status = 'ERROR' ORDER BY start_time DESC`,
-            size: 5,
-            keepPartial: true,
-          }),
-          streamTraceRows<any>({
-            ...range,
-            sql: `SELECT operation_name, duration FROM "${streamName}" WHERE ${serviceFilter()} ORDER BY duration DESC`,
-            size: 20,
-            keepPartial: true,
-          }),
-        ]);
-
-        if (scope !== serviceFilter()) return;
-        recentSpanData.value = {
-          errorSpans: errorHits.map((s: any) => ({
-            name: s.operation_name || "unknown",
-            duration: s.duration || 0,
-            timestampDisplay: s.start_time ? formatSpanTimestamp(s.start_time) : "",
-          })),
-          slowSpans: slowHits.map((s: any) => ({
-            name: s.operation_name || "unknown",
-            duration: s.duration || 0,
-          })),
-        };
-      } catch (error) {
-        console.error("Failed to fetch recent spans:", error);
-        if (scope === serviceFilter()) recentSpanData.value = { errorSpans: [], slowSpans: [] };
-      } finally {
-        if (scope === serviceFilter()) loadingOperations.value = false;
-      }
-    };
-
-    // Dispatch fetch based on current view mode
-    const fetchOperations = () => {
-      if (operationsViewMode.value === "aggregated") {
-        fetchAggregatedOperations();
-      } else {
-        fetchRecentSpans();
-      }
-    };
-
-    // Watch for panel visibility, node, stream filter, and view mode changes
     watch(
       () => [
         props.visible,
@@ -2803,7 +2756,6 @@ export default defineComponent({
         props.streamFilter,
         props.timeRange.startTime,
         props.timeRange.endTime,
-        operationsViewMode.value,
         // Re-fetch once the schema resolves the model column (request vs
         // response) — otherwise a model node's operations query fires with the
         // wrong column and returns "No operations found".
@@ -2818,7 +2770,7 @@ export default defineComponent({
           recentOperations.value = [];
           return;
         }
-        fetchOperations();
+        fetchAggregatedOperations();
       },
       { immediate: true },
     );
@@ -3029,9 +2981,11 @@ export default defineComponent({
           activeTab.value,
           panelWhereKey.value,
           activeResourceTabConfigs.value.map((c) => c.id).join(),
+          // A refreshed row of the same node can add a spelling, which changes what the cached rows counted.
+          serviceFilter(),
         ] as const,
       (next, prev) => {
-        if (prev && next[4] !== prev[4]) {
+        if (prev && (next[4] !== prev[4] || next[6] !== prev[6])) {
           resourceTabData.value = {};
           resourceTabLoading.value = {};
           resourceTabError.value = {};
@@ -3141,6 +3095,9 @@ export default defineComponent({
         serviceName:
           props.selectedNode?.name || props.selectedNode?.label || props.selectedNode?.id,
         serviceType: props.selectedNode?.service_type,
+        ...(props.selectedNode?.service_names?.length && !props.selectedNode?.service_type
+          ? { serviceNames: spanServiceNames() }
+          : {}),
         ...(hasCatalogServiceIdentity.value
           ? { serviceSystem: props.selectedNode?.service_system }
           : {}),
@@ -3370,6 +3327,7 @@ export default defineComponent({
       headerVersion,
       pickedPlace,
       identityNotReported,
+      identityAbsent,
       clearPickedPlace,
       whereText,
       resourceEmptyText,
@@ -3394,7 +3352,6 @@ export default defineComponent({
       // Recent Operations
       loadingOperations,
       recentOperations,
-      operationsViewMode,
       operationsTableColumns,
       operationsTableRows,
       navigateToTraces,

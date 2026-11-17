@@ -773,9 +773,10 @@ import {
   servingHealthSql,
   servingStatus,
   servingIdle,
-  versionTrafficKey,
+  versionTrafficFrom,
   catalogEnvColumn,
   catalogPanelRow,
+  catalogSpellings,
   catalogCellReason,
   sharedCellGap,
   catalogVersionSort,
@@ -839,6 +840,7 @@ import { useLicenseLock } from "@/composables/useFeatureLock";
 import { timestampToTimezoneDate } from "@/utils/timezone";
 import { useListViewState } from "@/composables/useListViewState";
 import { serviceHealthFromErrorRate, type ServiceHealthStatus } from "@/utils/traces/serviceHealth";
+import { serviceKey, serviceKeySql } from "@/utils/serviceCount";
 
 const { t, locale } = useI18nTyped();
 const placeholderLine = (name: string) => {
@@ -955,6 +957,8 @@ interface ServiceRow {
   place?: CatalogPlace;
   id: string;
   service_name: string;
+  /** The raw span spellings an instrumented row folded into one. */
+  service_names?: string[];
   status: ServiceHealthStatus;
   total_requests: number;
   error_count: number;
@@ -1290,7 +1294,7 @@ const selectedServiceNode = computed(() => {
   const current = envServices.value.find((row) => row.id === selected.id);
   const node = {
     id: selected.id,
-    name: selected.service_name,
+    name: current?.service_name ?? selected.service_name,
     service_type: selected.infer_service_type,
   };
   // A picked place with no row here is scoped by the route, so the kept row's Health would describe another place.
@@ -1300,6 +1304,9 @@ const selectedServiceNode = computed(() => {
     (selected.where_key || "") !== panelRoute.state.value.where;
   return {
     ...node,
+    ...(selected.infer_service_name
+      ? {}
+      : { service_names: catalogSpellings(services.value, selected.service_name) }),
     service_system: selected.infer_service_system,
     error_rate: selected.error_rate,
     health_status: current?.status ?? selected.status,
@@ -1652,7 +1659,10 @@ const filteredServices = computed(() => {
   );
   if (!filterText?.value?.trim()) return byType;
   const q = filterText.value?.trim().toLowerCase();
-  return byType.filter((s) => s.service_name.toLowerCase().includes(q));
+  // A folded row shows one spelling, so a search or deep link by any other spelling must still find it.
+  return byType.filter((s) =>
+    [s.service_name, ...(s.service_names ?? [])].some((name) => name.toLowerCase().includes(q)),
+  );
 });
 
 // Count of entities per category, plus the "all" total, for the tab badges.
@@ -1972,12 +1982,16 @@ function redAggregates(pred: string): string {
 
 function catalogSql(streamName: string, flags: StreamSchemaFlags): string {
   const requestPred = requestPredicate(flags.hasParentColumn);
+  // Spellings of one service share a registry key, so they are one row named by one of its spellings.
+  const key = serviceKeySql("service_name");
   if (!flags.hasInferColumns) {
     return `SELECT
-  service_name,
+  MIN(service_name) AS service_name,
+  array_agg(DISTINCT service_name) AS service_names,
 ${redAggregates(requestPred)}
 FROM "${streamName}"
-GROUP BY service_name
+GROUP BY
+  ${key}
 ORDER BY total_requests DESC`;
   }
   // infer_service_name is only set on CLIENT and PRODUCER spans (traces/inferred.rs).
@@ -1988,13 +2002,14 @@ ORDER BY total_requests DESC`;
   const systemExpr = flags.hasInferSystemColumn ? inferredColumn("infer_service_system") : null;
   const typeExpr = flags.hasInferTypeColumn ? inferredColumn("infer_service_type") : null;
   const groupBy = [
-    "COALESCE(NULLIF(infer_service_name, ''), service_name)",
+    `COALESCE(NULLIF(infer_service_name, ''), ${key})`,
     "NULLIF(infer_service_name, '')",
     systemExpr,
     typeExpr,
   ].filter((expr): expr is string => expr !== null);
   return `SELECT
-  COALESCE(NULLIF(infer_service_name, ''), service_name) AS service_name,
+  MIN(service_name) AS service_name,
+  array_agg(DISTINCT service_name) FILTER (WHERE NULLIF(infer_service_name, '') IS NULL) AS service_names,
   NULLIF(infer_service_name, '') AS _infer_service_name,
   ${systemExpr ?? "NULL"} AS _infer_service_system,
   ${typeExpr ?? "NULL"} AS _infer_service_type,
@@ -2179,18 +2194,7 @@ async function loadVersionTraffic(
       size: VERSION_TRAFFIC_ROWS,
     });
     if (load !== catalogLoad) return;
-    const traffic = new Map<string, VersionTraffic>();
-    for (const hit of hits)
-      traffic.set(
-        versionTrafficKey(
-          String(hit.service_name ?? ""),
-          String(hit.where_key ?? ""),
-          String(hit.version ?? ""),
-          hit.image == null ? null : String(hit.image),
-        ),
-        { requests: Number(hit.total_requests ?? 0), errors: Number(hit.error_count ?? 0) },
-      );
-    versionTraffic.value = traffic;
+    versionTraffic.value = versionTrafficFrom(hits);
     versionTrafficComplete.value = hits.length < VERSION_TRAFFIC_ROWS;
   } catch {
     if (load !== catalogLoad) return;
@@ -2258,7 +2262,6 @@ async function loadServicesCatalog() {
   if (flags.hasWhereColumn) {
     sql = sql
       .replace("SELECT\n", "SELECT\n  o2_service_where AS where_key,\n")
-      .replace("GROUP BY service_name", "GROUP BY o2_service_where, service_name")
       .replace("GROUP BY\n", "GROUP BY\n  o2_service_where,\n");
   }
 
@@ -2318,14 +2321,19 @@ async function loadServicesCatalog() {
         ) {
           const hits: any[] = response.content?.results?.hits ?? [];
           for (const hit of hits) {
-            const name = hit.service_name ?? "";
             const inferredName = hit._infer_service_name ?? undefined;
+            const name = inferredName ?? hit.service_name ?? "";
             const inferredSystem = hit._infer_service_system ?? undefined;
             const inferredType = hit._infer_service_type ?? undefined;
+            const spellings: string[] | undefined =
+              !inferredName && Array.isArray(hit.service_names)
+                ? hit.service_names.map(String)
+                : undefined;
+            // The shown spelling is MIN over the window and can change between loads; the folded key cannot.
             const id = JSON.stringify([
               hit.where_key || "",
               serviceRowId({
-                service_name: name,
+                service_name: inferredName ? name : serviceKey(name),
                 infer_service_name: inferredName,
                 infer_service_system: inferredSystem,
                 infer_service_type: inferredType,
@@ -2335,6 +2343,7 @@ async function loadServicesCatalog() {
               where_key: hit.where_key || "",
               id,
               service_name: name,
+              service_names: spellings,
               total_requests: hit.total_requests ?? 0,
               error_count: hit.error_count ?? 0,
               error_rate: hit.error_rate ?? 0,
@@ -2349,7 +2358,7 @@ async function loadServicesCatalog() {
               infer_service_system: inferredSystem,
               infer_service_type: inferredType,
             });
-            if (hit._is_real_service) realNames.add(name);
+            if (hit._is_real_service) (spellings ?? [name]).forEach((n) => realNames.add(n));
           }
         }
       },
