@@ -70,6 +70,7 @@
       "dashboard-cache-browser-refresh.spec.js",
       "dashboard-save-validation-message-11283.spec.js",
       "dashboard-14479-variable-name-prefix.spec.js",
+      "dashboard-16901-multi-query-empty-first.spec.js",
       "dashboard-3127-shortcut-behind-drawer.spec.js"
     ],
     "disabled": []
