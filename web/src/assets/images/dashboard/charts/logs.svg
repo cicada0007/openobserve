@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="color-scheme:light dark">
-  <rect x="6" y="9" width="6" height="7" rx="1" fill="#006BFF"/>
-  <rect x="16" y="10.5" width="42" height="4" rx="2" fill="#131313" style="fill:light-dark(#131313,#FFFFFF)"/>
-  <rect x="6" y="21" width="6" height="7" rx="1" fill="#FED402"/>
-  <rect x="16" y="22.5" width="34" height="4" rx="2" fill="#131313" style="fill:light-dark(#131313,#FFFFFF)"/>
-  <rect x="6" y="33" width="6" height="7" rx="1" fill="#FE0364"/>
-  <rect x="16" y="34.5" width="40" height="4" rx="2" fill="#131313" style="fill:light-dark(#131313,#FFFFFF)"/>
-  <rect x="6" y="45" width="6" height="7" rx="1" fill="#0ED290"/>
-  <rect x="16" y="46.5" width="28" height="4" rx="2" fill="#131313" style="fill:light-dark(#131313,#FFFFFF)"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" style="color-scheme:light dark"><rect width="6" height="7" x="6" y="9" fill="#006BFF" rx="1"/><rect width="42" height="4" x="16" y="10.5" fill="#131313" rx="2" style="fill:light-dark(#131313,#fff)"/><rect width="6" height="7" x="6" y="21" fill="#FED402" rx="1"/><rect width="34" height="4" x="16" y="22.5" fill="#131313" rx="2" style="fill:light-dark(#131313,#fff)"/><rect width="6" height="7" x="6" y="33" fill="#FE0364" rx="1"/><rect width="40" height="4" x="16" y="34.5" fill="#131313" rx="2" style="fill:light-dark(#131313,#fff)"/><rect width="6" height="7" x="6" y="45" fill="#0ED290" rx="1"/><rect width="28" height="4" x="16" y="46.5" fill="#131313" rx="2" style="fill:light-dark(#131313,#fff)"/></svg>
